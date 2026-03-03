@@ -1,0 +1,12 @@
+connections:
+  - name: local_dev
+    driver: postgresql
+    proto: tcp
+    host: 127.0.0.1
+    port: 5432
+    user: youruser
+    password: yourpassword
+    dbname: yourdb
+    params:
+      sslmode:
+        - disable

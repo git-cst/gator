@@ -1,0 +1,8 @@
+CREATE TABLE IF NOT EXISTS feeds (
+	id UUID PRIMARY KEY,
+	description TEXT NOT NULL,
+	url TEXT NOT NULL UNIQUE,
+	last_fetched_at TIMESTAMP DEFAULT NULL,
+	created_on TIMESTAMP NOT NULL,
+	updated_on TIMESTAMP NOT NULL
+);

@@ -6,11 +6,15 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"os/signal"
 	"sync"
 	"syscall"
 	"time"
 
+	"gator/config"
+
+	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
 
@@ -18,11 +22,11 @@ import (
 TODO
 Write code that interacts with the database:
 
-	1 - Initialize the db
-	2 - Connect to the db
-	3 - Setup schema
+	1 - Initialize the db DONE
+	2 - Connect to the db DONE
+	3 - Setup schema DONE BUT WILL PROBABLY REVISIT
 	4 - Write queries
-		a - Store which users can interact ? User registration? Or integrate with Authelia OIDC?
+		a - Store which users can interact ? User registration? Or integrate with Authelia OIDC? Will need to check
 		b - Store which feeds users want to pull from
 		c - Store the posts that have been archived
 
@@ -50,7 +54,9 @@ Write code that provides the data from the database to users as a static webpage
 	5 - Refresh on completion of database synchronization
 */
 func main() {
-	config, err := config.ReadConfig()
+	godotenv.Load()
+
+	config, err := config.LoadConfig()
 	if err != nil {
 		fmt.Println("Error reading config: %v", err)
 		os.Exit(1)
@@ -59,7 +65,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
-	db, err := sql.Open("postgres", config.DbURL)
+	db, err := sql.Open("postgres", config.DBURL)
 	defer db.Close()
 
 	var wg sync.WaitGroup

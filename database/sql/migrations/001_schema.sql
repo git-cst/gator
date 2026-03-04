@@ -1,0 +1,55 @@
+-- +goose Up
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+-- +goose StatementBegin
+CREATE TABLE IF NOT EXISTS users (
+	id UUID PRIMARY KEY,
+	name TEXT NOT NULL UNIQUE,
+	created_at TIMESTAMP NOT NULL,
+	updated_at TIMESTAMP NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS feeds (
+	id UUID PRIMARY KEY,
+	title TEXT NOT NULL,
+	description TEXT,
+	url TEXT NOT NULL UNIQUE,
+	last_fetched_at TIMESTAMP DEFAULT NULL,
+	created_at TIMESTAMP NOT NULL,
+	updated_at TIMESTAMP NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS posts (
+	id UUID PRIMARY KEY,
+	feed_id UUID NOT NULL,
+	title TEXT NOT NULL,
+	url TEXT NOT NULL UNIQUE,
+	description TEXT,
+	published_at TIMESTAMP NOT NULL,
+	created_at TIMESTAMP NOT NULL,
+	updated_at TIMESTAMP NOT NULL,
+
+	FOREIGN KEY (feed_id) REFERENCES feeds(id)
+	ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS feeds_users(
+	id UUID PRIMARY KEY,
+	user_id UUID NOT NULL,
+	feed_id UUID NOT NULL,
+	created_at TIMESTAMP NOT NULL,
+	updated_at TIMESTAMP NOT NULL,
+
+	FOREIGN KEY (user_id) REFERENCES users(id)
+	ON DELETE CASCADE,
+
+	FOREIGN KEY (feed_id) REFERENCES feeds(id)
+	ON DELETE CASCADE
+);
+-- +goose StatementEnd
+
+-- +goose Down
+DROP TABLE IF EXISTS feeds_users;
+DROP TABLE IF EXISTS posts;
+DROP TABLE IF EXISTS feeds;
+DROP TABLE IF EXISTS users;
+DROP EXTENSION IF EXISTS "uuid-ossp";

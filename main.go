@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"gator/config"
+	"gator/database"
 
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
@@ -67,6 +68,11 @@ func main() {
 
 	db, err := sql.Open("postgres", config.DBURL)
 	defer db.Close()
+
+	// Ensure DB is up-to-date
+	if err := database.RunMigrations(config.MigrationDir, db); err != nil {
+		log.Fatalf("migrations failed: %v", err)
+	}
 
 	var wg sync.WaitGroup
 

@@ -59,24 +59,32 @@ func main() {
 
 	config, err := config.LoadConfig()
 	if err != nil {
-		fmt.Println("Error reading config: %v", err)
-		os.Exit(1)
+		log.Fatalf("failed to load config: %v", err)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
-	db, err := sql.Open("postgres", config.DBURL)
+	// Open database and then check if connection can be established
+	db, err := sql.Open(config.DBDriver, config.DBURL)
+	if err != nil {
+		log.Fatalf("failed to open database: %v", err)
+	}
 	defer db.Close()
 
+	if err = database.WaitForDB(config.DBConnWait, config.DBConnAttempts, db); err != nil {
+		log.Fatalf("could not connect to database after 10 * %q: %v", config.DBConnWait, err)
+	}
+
 	// Ensure DB is up-to-date
-	if err := database.RunMigrations(config.MigrationDir, db); err != nil {
+	if err := database.RunMigrations(config.MigrationDir, config.DBDriver, db); err != nil {
 		log.Fatalf("migrations failed: %v", err)
 	}
 
 	var wg sync.WaitGroup
 
 	// Start background synchronization
+	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		sync.Start(ctx, feedService)

@@ -8,8 +8,8 @@ import (
 	"github.com/pressly/goose/v3"
 )
 
-func RunMigrations(migrationDir string, db *sql.DB) error {
-	if err := goose.SetDialect("postgres"); err != nil {
+func RunMigrations(migrationDir string, dbDriver string, db *sql.DB) error {
+	if err := goose.SetDialect(dbDriver); err != nil {
 		return fmt.Errorf("setting goose dialect: %w", err)
 	}
 

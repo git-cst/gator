@@ -59,6 +59,37 @@ func (q *Queries) CreateFeed(ctx context.Context, arg CreateFeedParams) (Feed, e
 	return i, err
 }
 
+const fetchFeedByUrl = `-- name: FetchFeedByUrl :one
+SELECT
+	id,
+	title,
+	description
+	url,
+	last_fetched_at
+FROM feeds
+WHERE url = $1
+LIMIT 1
+`
+
+type FetchFeedByUrlRow struct {
+	ID            uuid.UUID
+	Title         string
+	Url           sql.NullString
+	LastFetchedAt sql.NullTime
+}
+
+func (q *Queries) FetchFeedByUrl(ctx context.Context, url string) (FetchFeedByUrlRow, error) {
+	row := q.db.QueryRowContext(ctx, fetchFeedByUrl, url)
+	var i FetchFeedByUrlRow
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Url,
+		&i.LastFetchedAt,
+	)
+	return i, err
+}
+
 const fetchFeeds = `-- name: FetchFeeds :many
 SELECT 
 	id,
@@ -86,6 +117,52 @@ func (q *Queries) FetchFeeds(ctx context.Context) ([]FetchFeedsRow, error) {
 	var items []FetchFeedsRow
 	for rows.Next() {
 		var i FetchFeedsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Url,
+			&i.LastFetchedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getDistinctFeeds = `-- name: GetDistinctFeeds :many
+SELECT DISTINCT
+	id,
+	title,
+	description
+	url,
+	last_fetched_at
+FROM feeds
+ORDER BY title DESC
+`
+
+type GetDistinctFeedsRow struct {
+	ID            uuid.UUID
+	Title         string
+	Url           sql.NullString
+	LastFetchedAt sql.NullTime
+}
+
+func (q *Queries) GetDistinctFeeds(ctx context.Context) ([]GetDistinctFeedsRow, error) {
+	rows, err := q.db.QueryContext(ctx, getDistinctFeeds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetDistinctFeedsRow
+	for rows.Next() {
+		var i GetDistinctFeedsRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,

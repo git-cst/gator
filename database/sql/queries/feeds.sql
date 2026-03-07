@@ -29,3 +29,24 @@ SELECT
 	last_fetched_at
 FROM feeds
 ORDER BY last_fetched_at DESC;
+
+-- name: GetDistinctFeeds :many
+SELECT DISTINCT
+	id,
+	title,
+	description
+	url,
+	last_fetched_at
+FROM feeds
+ORDER BY title DESC;
+
+-- name: FetchFeedByUrl :one
+SELECT
+	id,
+	title,
+	description
+	url,
+	last_fetched_at
+FROM feeds
+WHERE url = $1
+LIMIT 1;

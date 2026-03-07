@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"os/signal"
 	"sync"
 	"syscall"
@@ -14,6 +13,7 @@ import (
 
 	"gator/config"
 	"gator/database"
+	"gator/feedservice"
 
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
@@ -81,13 +81,15 @@ func main() {
 		log.Fatalf("migrations failed: %v", err)
 	}
 
+	feedService := feedservice.NewService()
+
 	var wg sync.WaitGroup
 
 	// Start background synchronization
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		sync.Start(ctx, feedService)
+		feedservice.Start(ctx, feedService)
 	}()
 
 	// Start web server

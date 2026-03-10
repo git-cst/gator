@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"sync"
 	"time"
 
@@ -14,12 +15,14 @@ import (
 
 type FeedService struct {
 	queries        *database.Queries
+	httpClient     *http.Client
 	maxConcurrency uint8
 }
 
-func NewService(queries *database.Queries, maxConcurrency uint8) *FeedService {
+func NewService(queries *database.Queries, httpClient *http.Client, maxConcurrency uint8) *FeedService {
 	return &FeedService{
 		queries:        queries,
+		httpClient:     httpClient,
 		maxConcurrency: maxConcurrency,
 	}
 }

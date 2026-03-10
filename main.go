@@ -82,7 +82,7 @@ func main() {
 	}
 
 	queries := database.New(db)
-	feedService := feedservice.NewService(queries)
+	feedService := feedservice.NewService(queries, config.HTTPClient, config.MaxConcurrency)
 
 	var wg sync.WaitGroup
 

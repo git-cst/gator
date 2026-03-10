@@ -20,6 +20,9 @@ type Config struct {
 
 	// HTTP related configuration
 	HTTPClient *http.Client
+
+	// FeedService related configuration
+	MaxConcurrency uint8
 }
 
 var validDialects = map[string]bool{
@@ -56,6 +59,8 @@ func LoadConfig() (Config, error) {
 	dbConnAttemptsInt, err := strconv.Atoi(dbConnAttemptsStr)
 	if err != nil {
 		return Config{}, fmt.Errorf("DB_CONNECTION_ATTEMPTS %q is not a valid integer: %w", dbConnAttemptsStr, err)
+	} else if dbConnAttemptsInt > 255 {
+		return Config{}, fmt.Errorf("DB_CONNECTION_ATTEMPTS %q is greater than 255 which is not a valid uint8", dbConnAttemptsInt)
 	}
 
 	dbConnWaitStr := os.Getenv("DB_CONNECTION_WAIT")
@@ -74,6 +79,17 @@ func LoadConfig() (Config, error) {
 		return Config{}, fmt.Errorf("checking migration directory %q: %w", migrationDir, err)
 	}
 
+	maxConcStr := os.Getenv("MAX_CONCURRENCY")
+	if maxConcStr == "" {
+		return Config{}, fmt.Errorf("MAX_CONCURRENCY environment variable not set")
+	}
+	maxConcInt, err := strconv.Atoi(maxConcStr)
+	if err != nil {
+		return Config{}, fmt.Errorf("MAX_CONCURRENCY %q is not a valid integer: %w", maxConcStr, err)
+	} else if maxConcInt > 255 {
+		return Config{}, fmt.Errorf("MAX_CONCURRENCY %q is greater than 255 which is not a valid uint8", maxConcInt)
+	}
+
 	return Config{
 		DBURL:          dbURL,
 		DBDriver:       dbDriver,
@@ -84,5 +100,7 @@ func LoadConfig() (Config, error) {
 		HTTPClient: &http.Client{
 			Timeout: 30 * time.Second,
 		},
+
+		MaxConcurrency: uint8(maxConcInt),
 	}, nil
 }

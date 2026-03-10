@@ -3,20 +3,24 @@ package feedservice
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
+	"sync"
 	"time"
 
 	"gator/database"
 )
 
 type FeedService struct {
-	queries *database.Queries
+	queries        *database.Queries
+	maxConcurrency uint8
 }
 
-func NewService(queries *database.Queries) *FeedService {
+func NewService(queries *database.Queries, maxConcurrency uint8) *FeedService {
 	return &FeedService{
-		queries: queries,
+		queries:        queries,
+		maxConcurrency: maxConcurrency,
 	}
 }
 
@@ -100,9 +104,45 @@ func Start(ctx context.Context, service *FeedService) {
 }
 
 func runSync(ctx context.Context, service *FeedService) {
-	// Get the number of feeds there are.
-	//	Fan out with go routines
-	//	Read from channels as we go and then push the data to the db
-	//	Wait on all go routines to complete
-	//	Kill
+	feeds, err := service.GetDistinctFeeds(ctx)
+	if errors.Is(err, sql.ErrNoRows) {
+		log.Printf("no feeds retrieved from database: %v", err)
+		return
+	} else if err != nil {
+		log.Printf("unexpected error whilst retrieving feeds: %v", err)
+		return
+	}
+
+	sem := make(chan struct{}, service.maxConcurrency)
+	results := make(chan RSSFeed, len(feeds))
+
+	var wg sync.WaitGroup
+
+	for _, feed := range feeds {
+		wg.Add(1)
+		go func(url sql.NullString) {
+			defer wg.Done()
+
+			sem <- struct{}{}
+			defer func() { <-sem }() // this releases on exit for any reason so we don't have a leaked goroutine
+
+			parsed, err := fetchAndParse(ctx, url)
+			if err != nil {
+				log.Printf("failed to fetch %s: %v", url, err)
+				return
+			}
+			results <- parsed
+		}(feed.Url)
+	}
+
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	for parsed := range results {
+		if err := service.StorePosts(ctx, parsed); err != nil {
+			log.Printf("failed to store posts: %v", err)
+		}
+	}
 }

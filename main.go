@@ -81,7 +81,8 @@ func main() {
 		log.Fatalf("migrations failed: %v", err)
 	}
 
-	feedService := feedservice.NewService()
+	queries := database.New(db)
+	feedService := feedservice.NewService(queries)
 
 	var wg sync.WaitGroup
 
@@ -93,7 +94,7 @@ func main() {
 	}()
 
 	// Start web server
-	srv := web.NewServer(db)
+	srv := web.NewServer(queries)
 	go func() {
 		if err := srv.ListenAndServe(":8888"); err != http.ErrServerClosed {
 			log.Fatalf("HTTP server crash: %v", err)

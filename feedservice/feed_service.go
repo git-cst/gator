@@ -33,7 +33,9 @@ func (s *FeedService) GetDistinctFeeds(ctx context.Context) ([]database.GetDisti
 
 func (s *FeedService) StorePosts(ctx context.Context, feed RSSFeed) error {
 	storedFeed, err := s.queries.FetchFeedByUrl(ctx, feed.Channel.Link)
-	if err != nil {
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("no feed with url %q exists: %w", feed.Channel.Link, err)
+	} else if err != nil {
 		return err
 	}
 
@@ -116,18 +118,23 @@ func runSync(ctx context.Context, service *FeedService) {
 		return
 	}
 
-	sem := make(chan struct{}, service.maxConcurrency)
-	results := make(chan RSSFeed, len(feeds))
+	sem := make(chan struct{}, service.maxConcurrency) // buffer the channel blocking if max concurrency reached
+	results := make(chan RSSFeed, len(feeds))          // buffer the results channel so we can always send parsed results into the channel without blocking
 
 	var wg sync.WaitGroup
 
 	for _, feed := range feeds {
+		if !feed.Url.Valid {
+			log.Printf("skipping feed %v (id: %v): url is null", feed.Title, feed.ID)
+			continue
+		}
+
 		wg.Add(1)
-		go func(url sql.NullString) {
+		go func(url string) {
 			defer wg.Done()
 
 			sem <- struct{}{}
-			defer func() { <-sem }() // this releases on exit for any reason so we don't have a leaked goroutine
+			defer func() { <-sem }() // this releases on exit for any reason so we don't have a semaphore slot leak (e.g. the semaphore slot is always taken up)
 
 			parsed, err := fetchAndParse(ctx, url)
 			if err != nil {
@@ -135,7 +142,7 @@ func runSync(ctx context.Context, service *FeedService) {
 				return
 			}
 			results <- parsed
-		}(feed.Url)
+		}(feed.Url.String)
 	}
 
 	go func() {
@@ -148,4 +155,8 @@ func runSync(ctx context.Context, service *FeedService) {
 			log.Printf("failed to store posts: %v", err)
 		}
 	}
+}
+
+func fetchAndParse(ctx context.Context, url string) (RSSFeed, error) {
+	return RSSFeed{}, nil
 }

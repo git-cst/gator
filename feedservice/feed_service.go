@@ -92,23 +92,23 @@ func parseTimeString(timeString string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("could not parse time '%s': %v", timeString, firstErr)
 }
 
-func Start(ctx context.Context, service *FeedService, httpClient *http.Client) {
+func Start(ctx context.Context, service *FeedService) {
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
 
-	runSync(ctx, service, httpClient)
+	runSync(ctx, service)
 
 	for {
 		select {
 		case <-ticker.C:
-			runSync(ctx, service, httpClient)
+			runSync(ctx, service)
 		case <-ctx.Done():
 			return
 		}
 	}
 }
 
-func runSync(ctx context.Context, service *FeedService, httpClient *http.Client) {
+func runSync(ctx context.Context, service *FeedService) {
 	feeds, err := service.GetDistinctFeeds(ctx)
 	if errors.Is(err, sql.ErrNoRows) {
 		log.Printf("no feeds retrieved from database: %v", err)
@@ -136,7 +136,7 @@ func runSync(ctx context.Context, service *FeedService, httpClient *http.Client)
 			sem <- struct{}{}
 			defer func() { <-sem }() // this releases on exit for any reason so we don't have a semaphore slot leak (e.g. the semaphore slot is always taken up)
 
-			parsed, err := fetchAndParse(ctx, url, httpClient)
+			parsed, err := fetchAndParse(ctx, service.httpClient, url)
 			if err != nil {
 				log.Printf("failed to fetch %s: %v", url, err)
 				return
@@ -157,6 +157,6 @@ func runSync(ctx context.Context, service *FeedService, httpClient *http.Client)
 	}
 }
 
-func fetchAndParse(ctx context.Context, url string, httpClient *http.Client) (RSSFeed, error) {
+func fetchAndParse(ctx context.Context, httpClient *http.Client, fetchURL string) (RSSFeed, error) {
 	return RSSFeed{}, nil
 }

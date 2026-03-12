@@ -3,8 +3,11 @@ package feedservice
 import (
 	"context"
 	"database/sql"
+	"encoding/xml"
 	"errors"
 	"fmt"
+	"html"
+	"io"
 	"log"
 	"net/http"
 	"sync"
@@ -119,7 +122,7 @@ func runSync(ctx context.Context, service *FeedService) {
 	}
 
 	sem := make(chan struct{}, service.maxConcurrency) // buffer the channel blocking if max concurrency reached
-	results := make(chan RSSFeed, len(feeds))          // buffer the results channel so we can always send parsed results into the channel without blocking
+	results := make(chan *RSSFeed, len(feeds))         // buffer the results channel so we can always send parsed results into the channel without blocking
 
 	var wg sync.WaitGroup
 
@@ -151,12 +154,41 @@ func runSync(ctx context.Context, service *FeedService) {
 	}()
 
 	for parsed := range results {
-		if err := service.StorePosts(ctx, parsed); err != nil {
+		if err := service.StorePosts(ctx, *parsed); err != nil {
 			log.Printf("failed to store posts: %v", err)
 		}
 	}
 }
 
-func fetchAndParse(ctx context.Context, httpClient *http.Client, fetchURL string) (RSSFeed, error) {
-	return RSSFeed{}, nil
+func fetchAndParse(ctx context.Context, httpClient *http.Client, fetchURL string) (*RSSFeed, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fetchURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating request for %s: %w", fetchURL, err)
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetching %s: %w", fetchURL, err)
+	}
+	defer resp.Body.Close()
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading response for %s: %w", fetchURL, err)
+	}
+
+	var feed RSSFeed
+	if err := xml.Unmarshal(data, &feed); err != nil {
+		return nil, fmt.Errorf("decoding feed %s: %w", fetchURL, err)
+	}
+
+	feed.Channel.Title = html.UnescapeString(feed.Channel.Title)
+	feed.Channel.Description = html.UnescapeString(feed.Channel.Description)
+
+	for i := range feed.Channel.Items {
+		feed.Channel.Items[i].Title = html.UnescapeString(feed.Channel.Items[i].Title)
+		feed.Channel.Items[i].Description = html.UnescapeString(feed.Channel.Items[i].Description)
+	}
+
+	return &feed, nil
 }

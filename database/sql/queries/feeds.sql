@@ -24,7 +24,7 @@ UPDATE feeds SET last_fetched_at = $1 WHERE id = $2 RETURNING *;
 SELECT 
 	id,
 	title,
-	description
+	description,
 	url,
 	last_fetched_at
 FROM feeds
@@ -34,7 +34,7 @@ ORDER BY last_fetched_at DESC;
 SELECT DISTINCT
 	id,
 	title,
-	description
+	description,
 	url,
 	last_fetched_at
 FROM feeds
@@ -44,9 +44,23 @@ ORDER BY title DESC;
 SELECT
 	id,
 	title,
-	description
+	description,
 	url,
 	last_fetched_at
 FROM feeds
 WHERE url = $1
 LIMIT 1;
+
+-- name: GetUserFeeds :many
+SELECT
+	f.title,
+	f.description,
+	f.url
+FROM feeds_users fu
+
+LEFT JOIN feeds f
+	ON fu.feed_id = f.id
+LEFT JOIN users u
+	ON fu.user_id = u.id
+
+WHERE u.id = $1;

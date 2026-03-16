@@ -90,7 +90,7 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		feedservice.Start(ctx, feedService, config.HTTPClient)
+		feedservice.Start(ctx, feedService)
 	}()
 
 	// Start web server

@@ -63,7 +63,7 @@ const fetchFeedByUrl = `-- name: FetchFeedByUrl :one
 SELECT
 	id,
 	title,
-	description
+	description,
 	url,
 	last_fetched_at
 FROM feeds
@@ -74,7 +74,8 @@ LIMIT 1
 type FetchFeedByUrlRow struct {
 	ID            uuid.UUID
 	Title         string
-	Url           sql.NullString
+	Description   sql.NullString
+	Url           string
 	LastFetchedAt sql.NullTime
 }
 
@@ -84,6 +85,7 @@ func (q *Queries) FetchFeedByUrl(ctx context.Context, url string) (FetchFeedByUr
 	err := row.Scan(
 		&i.ID,
 		&i.Title,
+		&i.Description,
 		&i.Url,
 		&i.LastFetchedAt,
 	)
@@ -94,7 +96,7 @@ const fetchFeeds = `-- name: FetchFeeds :many
 SELECT 
 	id,
 	title,
-	description
+	description,
 	url,
 	last_fetched_at
 FROM feeds
@@ -104,7 +106,8 @@ ORDER BY last_fetched_at DESC
 type FetchFeedsRow struct {
 	ID            uuid.UUID
 	Title         string
-	Url           sql.NullString
+	Description   sql.NullString
+	Url           string
 	LastFetchedAt sql.NullTime
 }
 
@@ -120,6 +123,7 @@ func (q *Queries) FetchFeeds(ctx context.Context) ([]FetchFeedsRow, error) {
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
+			&i.Description,
 			&i.Url,
 			&i.LastFetchedAt,
 		); err != nil {
@@ -140,7 +144,7 @@ const getDistinctFeeds = `-- name: GetDistinctFeeds :many
 SELECT DISTINCT
 	id,
 	title,
-	description
+	description,
 	url,
 	last_fetched_at
 FROM feeds
@@ -150,7 +154,8 @@ ORDER BY title DESC
 type GetDistinctFeedsRow struct {
 	ID            uuid.UUID
 	Title         string
-	Url           sql.NullString
+	Description   sql.NullString
+	Url           string
 	LastFetchedAt sql.NullTime
 }
 
@@ -166,9 +171,54 @@ func (q *Queries) GetDistinctFeeds(ctx context.Context) ([]GetDistinctFeedsRow, 
 		if err := rows.Scan(
 			&i.ID,
 			&i.Title,
+			&i.Description,
 			&i.Url,
 			&i.LastFetchedAt,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getUserFeeds = `-- name: GetUserFeeds :many
+SELECT
+	f.title,
+	f.description,
+	f.url
+FROM feeds_users fu
+
+LEFT JOIN feeds f
+	ON fu.feed_id = f.id
+LEFT JOIN users u
+	ON fu.user_id = u.id
+
+WHERE u.id = $1
+`
+
+type GetUserFeedsRow struct {
+	Title       sql.NullString
+	Description sql.NullString
+	Url         sql.NullString
+}
+
+func (q *Queries) GetUserFeeds(ctx context.Context, id uuid.UUID) ([]GetUserFeedsRow, error) {
+	rows, err := q.db.QueryContext(ctx, getUserFeeds, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetUserFeedsRow
+	for rows.Next() {
+		var i GetUserFeedsRow
+		if err := rows.Scan(&i.Title, &i.Description, &i.Url); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

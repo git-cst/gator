@@ -77,7 +77,7 @@ SELECT
 	p.published_at
 FROM posts as p
 
-INNER JOIN feeds_users fu
+LEFT JOIN feeds_users fu
 ON p.feed_id = fu.feed_id
 
 WHERE fu.user_id = $1

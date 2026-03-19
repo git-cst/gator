@@ -23,6 +23,10 @@ type Config struct {
 
 	// FeedService related configuration
 	MaxConcurrency uint8
+
+	// Server related configuration
+	TemplateDir string
+	ServerPort  string
 }
 
 var validDialects = map[string]bool{
@@ -33,6 +37,7 @@ var validDialects = map[string]bool{
 }
 
 func LoadConfig() (Config, error) {
+	// Database config
 	dbURL := os.Getenv("DB_URL")
 	if dbURL == "" {
 		return Config{}, fmt.Errorf("DB_URL environment variable not set")
@@ -79,6 +84,7 @@ func LoadConfig() (Config, error) {
 		return Config{}, fmt.Errorf("checking migration directory %q: %w", migrationDir, err)
 	}
 
+	// FeedService Config
 	maxConcStr := os.Getenv("MAX_CONCURRENCY")
 	if maxConcStr == "" {
 		return Config{}, fmt.Errorf("MAX_CONCURRENCY environment variable not set")
@@ -88,6 +94,17 @@ func LoadConfig() (Config, error) {
 		return Config{}, fmt.Errorf("MAX_CONCURRENCY %q is not a valid integer: %w", maxConcStr, err)
 	} else if maxConcInt > 255 {
 		return Config{}, fmt.Errorf("MAX_CONCURRENCY %q is greater than 255 which is not a valid uint8", maxConcInt)
+	}
+
+	// Server related Config
+	templateDir := os.Getenv("TEMPLATE_DIR")
+	if templateDir == "" {
+		return Config{}, fmt.Errorf("TEMPLATE_DIR environment variable not set")
+	}
+
+	serverPort := os.Getenv("SERVER_PORT")
+	if serverPort == "" {
+		return Config{}, fmt.Errorf("SERVER_PORT environment variable not set")
 	}
 
 	return Config{
@@ -102,5 +119,8 @@ func LoadConfig() (Config, error) {
 		},
 
 		MaxConcurrency: uint8(maxConcInt),
+
+		TemplateDir: templateDir,
+		ServerPort:  serverPort,
 	}, nil
 }

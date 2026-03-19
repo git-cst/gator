@@ -1,1 +1,55 @@
 package web
+
+import (
+	"context"
+	"fmt"
+	"html/template"
+	"net/http"
+	"path/filepath"
+
+	"gator/database"
+)
+
+type Server struct {
+	queries  *database.Queries
+	server   *http.Server
+	mux      *http.ServeMux
+	template *template.Template
+}
+
+func NewServer(queries *database.Queries, templateDir string, srvPort string) (*Server, error) {
+	globPattern := filepath.Join(templateDir, "*.html")
+	parsedTemplate, err := template.ParseGlob(globPattern)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse template files with pattern %q: %w", globPattern, err)
+	}
+
+	mux := http.NewServeMux()
+	srv := http.Server{
+		Addr:    srvPort,
+		Handler: mux,
+	}
+
+	serverStruct := &Server{
+		queries:  queries,
+		server:   &srv,
+		mux:      mux,
+		template: parsedTemplate,
+	}
+
+	serverStruct.registerRoutes()
+
+	return serverStruct, nil
+}
+
+func (s *Server) ListenAndServe() error {
+	return s.server.ListenAndServe()
+}
+
+func (s *Server) Shutdown(ctx context.Context) error {
+	return s.server.Shutdown(ctx)
+}
+
+func (s *Server) registerRoutes() {
+	s.mux.HandleFunc("GET /health", s.handleHealth)
+}

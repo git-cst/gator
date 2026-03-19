@@ -14,6 +14,7 @@ import (
 	"gator/config"
 	"gator/database"
 	"gator/feedservice"
+	"gator/web"
 
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
@@ -94,9 +95,13 @@ func main() {
 	}()
 
 	// Start web server
-	srv := web.NewServer(queries)
+	srv, err := web.NewServer(queries, config.TemplateDir, config.ServerPort)
+	if err != nil {
+		log.Fatalf("Failed to create new server: %v", err)
+	}
+
 	go func() {
-		if err := srv.ListenAndServe(":8888"); err != http.ErrServerClosed {
+		if err := srv.ListenAndServe(); err != http.ErrServerClosed {
 			log.Fatalf("HTTP server crash: %v", err)
 		}
 	}()
@@ -105,7 +110,7 @@ func main() {
 	<-ctx.Done()
 	fmt.Println("Shutting down...")
 
-	// Graceful shutdowns
+	// Graceful shutdown
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	srv.Shutdown(shutdownCtx)

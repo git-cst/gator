@@ -6,15 +6,17 @@ import (
 	"html/template"
 	"net/http"
 	"path/filepath"
+	"time"
 
 	"gator/database"
 )
 
 type Server struct {
-	queries  *database.Queries
-	server   *http.Server
-	mux      *http.ServeMux
-	template *template.Template
+	queries   *database.Queries
+	server    *http.Server
+	mux       *http.ServeMux
+	template  *template.Template
+	startTime time.Time
 }
 
 func NewServer(queries *database.Queries, templateDir string, srvPort string) (*Server, error) {
@@ -31,10 +33,11 @@ func NewServer(queries *database.Queries, templateDir string, srvPort string) (*
 	}
 
 	serverStruct := &Server{
-		queries:  queries,
-		server:   &srv,
-		mux:      mux,
-		template: parsedTemplate,
+		queries:   queries,
+		server:    &srv,
+		mux:       mux,
+		template:  parsedTemplate,
+		startTime: time.Now(),
 	}
 
 	serverStruct.registerRoutes()
@@ -52,4 +55,12 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /health", s.handleHealth)
+}
+
+func (s *Server) uptime() string {
+	d := time.Since(s.startTime)
+	hours := int(d.Hours())
+	minutes := int(d.Minutes()) % 60
+	seconds := int(d.Seconds()) % 60
+	return fmt.Sprintf("%dh%dm%ds", hours, minutes, seconds)
 }

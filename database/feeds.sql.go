@@ -188,6 +188,50 @@ func (q *Queries) GetDistinctFeeds(ctx context.Context) ([]GetDistinctFeedsRow, 
 	return items, nil
 }
 
+const getDistinctFeedsForUser = `-- name: GetDistinctFeedsForUser :many
+SELECT DISTINCT
+	f.title,
+	f.description,
+	f.url
+FROM feeds_users fu
+LEFT JOIN feeds f
+ON fu.feed_id = f.id
+LEFT JOIN users u
+ON u .user_id = u.id
+
+WHERE u.id = $1
+ORDER BY title DESC
+`
+
+type GetDistinctFeedsForUserRow struct {
+	Title       sql.NullString
+	Description sql.NullString
+	Url         sql.NullString
+}
+
+func (q *Queries) GetDistinctFeedsForUser(ctx context.Context, id uuid.UUID) ([]GetDistinctFeedsForUserRow, error) {
+	rows, err := q.db.QueryContext(ctx, getDistinctFeedsForUser, id)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetDistinctFeedsForUserRow
+	for rows.Next() {
+		var i GetDistinctFeedsForUserRow
+		if err := rows.Scan(&i.Title, &i.Description, &i.Url); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getUserFeeds = `-- name: GetUserFeeds :many
 SELECT
 	f.title,

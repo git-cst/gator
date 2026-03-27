@@ -40,6 +40,20 @@ SELECT DISTINCT
 FROM feeds
 ORDER BY title DESC;
 
+-- name: GetDistinctFeedsForUser :many
+SELECT DISTINCT
+	f.title,
+	f.description,
+	f.url
+FROM feeds_users fu
+LEFT JOIN feeds f
+ON fu.feed_id = f.id
+LEFT JOIN users u
+ON u .user_id = u.id
+
+WHERE u.id = $1
+ORDER BY title DESC;
+
 -- name: FetchFeedByUrl :one
 SELECT
 	id,

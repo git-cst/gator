@@ -157,6 +157,14 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 	} else if err != nil {
 		statusCode = http.StatusInternalServerError
 		errMsg = "internal server error"
+		s.respondWithHTML(w, templateName, pageData{
+			Users:         users,
+			CurrUser:      nil,
+			CurrUserFeeds: currUserFeeds,
+			CurrUserPosts: currUserPosts,
+			ErrorString:   errMsg,
+		}, statusCode)
+		return
 	}
 
 	userFeedRows, err := s.queries.GetUserFeeds(ctx, currUser.ID)

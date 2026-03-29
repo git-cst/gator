@@ -11,9 +11,15 @@ func toFeedItem(row database.GetUserFeedsRow) *feedItem {
 }
 
 func toPostItem(row database.GetPostsForUserRow) *postItem {
+	var description string
+	if row.Description.Valid {
+		description = row.Description.String
+	}
+
 	return &postItem{
 		ID:          row.ID,
 		Title:       row.Title,
+		Description: description,
 		URL:         row.Url,
 		PublishedAt: row.PublishedAt,
 	}

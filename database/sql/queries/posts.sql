@@ -21,6 +21,7 @@ RETURNING *;
 
 -- name: GetPostsForUser :many
 SELECT
+	p.id,
 	p.title,
 	p.url,
 	p.description,

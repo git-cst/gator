@@ -67,6 +67,7 @@ LIMIT 1;
 
 -- name: GetUserFeeds :many
 SELECT
+	f.id,
 	f.title,
 	f.description,
 	f.url

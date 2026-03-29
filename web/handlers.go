@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"io"
+	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -86,13 +86,12 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 
-	s.template.ExecuteTemplate()
-
 	var statusCode int
 	var users []*userItem
 	var currUserFeeds []*feedItem
 	var currUserPosts []*postItem
 	var errMsg string
+	templateName := getTemplateName(r, "feeds.html", "feeds_partial.html")
 
 	usersRows, err := s.queries.GetUsers(ctx)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -100,6 +99,14 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 	} else if err != nil {
 		statusCode = http.StatusInternalServerError
 		errMsg = "internal server error"
+		s.respondWithHTML(w, templateName, pageData{
+			Users:         users,
+			CurrUser:      nil,
+			CurrUserFeeds: currUserFeeds,
+			CurrUserPosts: currUserPosts,
+			ErrorString:   errMsg,
+		}, statusCode)
+		return
 	} else {
 		statusCode = http.StatusOK
 		for _, row := range usersRows {
@@ -110,7 +117,7 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 	userReq := r.URL.Query().Get("user_id")
 	// Exit early as we don't have a user and don't need to request the rest of the data
 	if userReq == "" {
-		respondWithJSON(w, pageData{
+		s.respondWithHTML(w, templateName, pageData{
 			Users:         users,
 			CurrUser:      nil,
 			CurrUserFeeds: currUserFeeds,
@@ -125,7 +132,7 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		statusCode = http.StatusBadRequest
 		errMsg = "invalid user"
-		respondWithJSON(w, pageData{
+		s.respondWithHTML(w, templateName, pageData{
 			Users:         users,
 			CurrUser:      nil,
 			CurrUserFeeds: currUserFeeds,
@@ -139,7 +146,7 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 	if errors.Is(err, sql.ErrNoRows) {
 		statusCode = http.StatusBadRequest
 		errMsg = "user does not exist"
-		respondWithJSON(w, pageData{
+		s.respondWithHTML(w, templateName, pageData{
 			Users:         users,
 			CurrUser:      nil,
 			CurrUserFeeds: currUserFeeds,
@@ -167,7 +174,7 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 
 	params := database.GetPostsForUserParams{
 		UserID: currUser.ID,
-		Limit:  50,
+		Limit:  50, // TODO Add in ability to paramerterize this (probably through a query again. Either implement skip or an increase to limit. Skip is the proper way.
 	}
 
 	userPostRows, err := s.queries.GetPostsForUser(ctx, params)
@@ -183,7 +190,7 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	respondWithJSON(w, pageData{
+	s.respondWithHTML(w, templateName, pageData{
 		Users:         users,
 		CurrUser:      toUserItem(currUser),
 		CurrUserFeeds: currUserFeeds,
@@ -192,8 +199,13 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 	}, statusCode)
 }
 
-func (s *Server) respondWithHTML(w http.ResponseWriter, responseData any, statusCode int) {
-	html, err := s.template.ExecuteTemplate()
+func (s *Server) respondWithHTML(w http.ResponseWriter, templateName string, responseData any, statusCode int) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(statusCode)
+	if err := s.template.ExecuteTemplate(w, templateName, responseData); err != nil {
+		log.Printf("template execution failed: %v", err)
+		fmt.Fprintf(w, "rendering error")
+	}
 }
 
 func respondWithJSON(w http.ResponseWriter, responseData any, statusCode int) {
@@ -211,4 +223,11 @@ func respondWithJSON(w http.ResponseWriter, responseData any, statusCode int) {
 	if err != nil {
 		log.Print("error writing data")
 	}
+}
+
+func getTemplateName(r *http.Request, fullPage string, partial string) string {
+	if r.Header.Get("HX-Request") == "true" {
+		return partial
+	}
+	return fullPage
 }

@@ -55,6 +55,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /health", s.handleHealth)
+	s.mux.HandleFunc("GET /feeds", s.handleGetFeeds)
 }
 
 func (s *Server) uptime() string {

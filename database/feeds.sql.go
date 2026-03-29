@@ -234,6 +234,7 @@ func (q *Queries) GetDistinctFeedsForUser(ctx context.Context, id uuid.UUID) ([]
 
 const getUserFeeds = `-- name: GetUserFeeds :many
 SELECT
+	f.id,
 	f.title,
 	f.description,
 	f.url
@@ -248,6 +249,7 @@ WHERE u.id = $1
 `
 
 type GetUserFeedsRow struct {
+	ID          uuid.NullUUID
 	Title       sql.NullString
 	Description sql.NullString
 	Url         sql.NullString
@@ -262,7 +264,12 @@ func (q *Queries) GetUserFeeds(ctx context.Context, id uuid.UUID) ([]GetUserFeed
 	var items []GetUserFeedsRow
 	for rows.Next() {
 		var i GetUserFeedsRow
-		if err := rows.Scan(&i.Title, &i.Description, &i.Url); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Description,
+			&i.Url,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

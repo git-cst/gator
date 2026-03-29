@@ -71,6 +71,7 @@ func (q *Queries) CreatePost(ctx context.Context, arg CreatePostParams) (Post, e
 
 const getPostsForUser = `-- name: GetPostsForUser :many
 SELECT
+	p.id,
 	p.title,
 	p.url,
 	p.description,
@@ -92,6 +93,7 @@ type GetPostsForUserParams struct {
 }
 
 type GetPostsForUserRow struct {
+	ID          uuid.UUID
 	Title       string
 	Url         string
 	Description sql.NullString
@@ -108,6 +110,7 @@ func (q *Queries) GetPostsForUser(ctx context.Context, arg GetPostsForUserParams
 	for rows.Next() {
 		var i GetPostsForUserRow
 		if err := rows.Scan(
+			&i.ID,
 			&i.Title,
 			&i.Url,
 			&i.Description,

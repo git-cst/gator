@@ -127,11 +127,6 @@ func runSync(ctx context.Context, service *FeedService) {
 	var wg sync.WaitGroup
 
 	for _, feed := range feeds {
-		if !feed.Url.Valid {
-			log.Printf("skipping feed %v (id: %v): url is null", feed.Title, feed.ID)
-			continue
-		}
-
 		wg.Add(1)
 		go func(url string) {
 			defer wg.Done()
@@ -145,7 +140,7 @@ func runSync(ctx context.Context, service *FeedService) {
 				return
 			}
 			results <- parsed
-		}(feed.Url.String)
+		}(feed.Url)
 	}
 
 	go func() {

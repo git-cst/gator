@@ -34,4 +34,5 @@ ON p.feed_id = fu.feed_id
 WHERE fu.user_id = $1
 
 ORDER BY p.published_at DESC
-LIMIT $2;
+OFFSET $2;
+

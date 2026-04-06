@@ -8,11 +8,14 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"gator/database"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
 
 type errorResponse struct {
@@ -114,22 +117,9 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	userReq := r.URL.Query().Get("user_id")
-	// Exit early as we don't have a user and don't need to request the rest of the data
-	if userReq == "" {
-		s.respondWithHTML(w, templateName, pageData{
-			Users:         users,
-			CurrUser:      nil,
-			CurrUserFeeds: currUserFeeds,
-			CurrUserPosts: currUserPosts,
-			ErrorString:   errMsg,
-		}, statusCode)
-		return
-	}
-
-	userUUID, err := uuid.Parse(userReq)
-	// Can't parse UUID so we exit early
+	userUUID, err := s.resolveCurrentUser(r)
 	if err != nil {
+		// Can't parse UUID so we exit early
 		statusCode = http.StatusBadRequest
 		errMsg = "invalid user"
 		s.respondWithHTML(w, templateName, pageData{
@@ -142,7 +132,19 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	currUser, err := s.queries.GetUserById(ctx, userUUID)
+	// Exit early as we don't have a user and don't need to request the rest of the data
+	if !userUUID.Valid {
+		s.respondWithHTML(w, templateName, pageData{
+			Users:         users,
+			CurrUser:      nil,
+			CurrUserFeeds: currUserFeeds,
+			CurrUserPosts: currUserPosts,
+			ErrorString:   errMsg,
+		}, statusCode)
+		return
+	}
+
+	currUser, err := s.queries.GetUserById(ctx, userUUID.UUID)
 	if errors.Is(err, sql.ErrNoRows) {
 		statusCode = http.StatusBadRequest
 		errMsg = "user does not exist"
@@ -180,9 +182,23 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	offsetStr := r.URL.Query().Get("offset")
+	offsetInt, err := strconv.Atoi(offsetStr)
+	if err != nil {
+		statusCode = http.StatusInternalServerError
+		errMsg = "offset must be an integer"
+		s.respondWithHTML(w, templateName, pageData{
+			Users:         users,
+			CurrUser:      toUserItem(currUser),
+			CurrUserFeeds: currUserFeeds,
+			CurrUserPosts: currUserPosts,
+			ErrorString:   errMsg,
+		}, statusCode)
+		return
+	}
 	params := database.GetPostsForUserParams{
 		UserID: currUser.ID,
-		Limit:  50, // TODO Add in ability to paramerterize this (probably through a query again. Either implement skip or an increase to limit. Skip is the proper way.
+		Offset: int32(offsetInt),
 	}
 
 	userPostRows, err := s.queries.GetPostsForUser(ctx, params)
@@ -205,6 +221,94 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 		CurrUserPosts: currUserPosts,
 		ErrorString:   errMsg,
 	}, statusCode)
+}
+
+func (s *Server) handleAddFeed(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	defer r.Body.Close()
+
+	statusCode := http.StatusSeeOther
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1024*1024)
+	feedTitle := r.FormValue("feed-title")
+	feedURL := r.FormValue("feed-url")
+	formDescription := strings.TrimSpace(r.FormValue("feed-description"))
+	feedDescription := sql.NullString{
+		String: formDescription,
+		Valid:  formDescription != "",
+	}
+
+	createFeedParams := database.CreateFeedParams{
+		ID:          uuid.New(),
+		Title:       feedTitle,
+		Url:         feedURL,
+		Description: feedDescription,
+	}
+
+	var feedID uuid.UUID
+	feedRow, err := s.queries.CreateFeed(ctx, createFeedParams)
+	if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "23505" {
+		feedRow, err := s.queries.GetFeedByUrl(ctx, feedURL)
+		if err != nil {
+			statusCode = http.StatusInternalServerError
+			// Perform error response
+			return
+		}
+
+		feedID = feedRow.ID
+	} else if err != nil {
+		statusCode = http.StatusInternalServerError
+		// Perform error response
+		return
+	} else {
+		feedID = feedRow.ID
+	}
+
+	feedsUsersRow, err := s.subscribeUserToFeed(ctx, r, feedID)
+	if err != nil {
+		statusCode = http.StatusInternalServerError
+		// Perform error response
+		return
+	}
+
+	redirectURL := fmt.Sprintf("/feeds?user_id=%s", feedsUsersRow.UserID.String())
+	http.Redirect(w, r, redirectURL, statusCode)
+}
+
+func (s *Server) subscribeUserToFeed(ctx context.Context, r *http.Request, feedID uuid.UUID) (database.FeedsUser, error) {
+	userUUID, err := s.resolveCurrentUser(r)
+	if err != nil {
+		return database.FeedsUser{}, err
+	}
+
+	addFeedParams := database.AddFeedForUserParams{
+		FeedID: feedID,
+		UserID: userUUID.UUID,
+	}
+	feedUserRow, err := s.queries.AddFeedForUser(ctx, addFeedParams)
+	if err != nil {
+		return database.FeedsUser{}, err
+	}
+
+	return feedUserRow, nil
+}
+
+func (s *Server) resolveCurrentUser(r *http.Request) (uuid.NullUUID, error) {
+	userReq := r.URL.Query().Get("user_id")
+	if userReq == "" {
+		return uuid.NullUUID{Valid: false}, nil
+	}
+
+	parsedUUID, err := uuid.Parse(userReq)
+	if err != nil {
+		return uuid.NullUUID{Valid: false}, err
+	}
+
+	return uuid.NullUUID{
+		UUID:  parsedUUID,
+		Valid: true,
+	}, nil
 }
 
 func (s *Server) respondWithHTML(w http.ResponseWriter, templateName string, responseData any, statusCode int) {

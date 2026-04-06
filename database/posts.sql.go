@@ -84,12 +84,12 @@ ON p.feed_id = fu.feed_id
 WHERE fu.user_id = $1
 
 ORDER BY p.published_at DESC
-LIMIT $2
+OFFSET $2
 `
 
 type GetPostsForUserParams struct {
 	UserID uuid.UUID
-	Limit  int32
+	Offset int32
 }
 
 type GetPostsForUserRow struct {
@@ -101,7 +101,7 @@ type GetPostsForUserRow struct {
 }
 
 func (q *Queries) GetPostsForUser(ctx context.Context, arg GetPostsForUserParams) ([]GetPostsForUserRow, error) {
-	rows, err := q.db.QueryContext(ctx, getPostsForUser, arg.UserID, arg.Limit)
+	rows, err := q.db.QueryContext(ctx, getPostsForUser, arg.UserID, arg.Offset)
 	if err != nil {
 		return nil, err
 	}

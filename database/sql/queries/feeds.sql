@@ -54,7 +54,7 @@ ON u .user_id = u.id
 WHERE u.id = $1
 ORDER BY title DESC;
 
--- name: FetchFeedByUrl :one
+-- name: GetFeedByUrl :one
 SELECT
 	id,
 	title,
@@ -79,3 +79,10 @@ LEFT JOIN users u
 	ON fu.user_id = u.id
 
 WHERE u.id = $1;
+
+-- name: AddFeedForUser :one
+INSERT INTO feeds_users(
+	feed_id,
+	user_id
+) VALUES ($1, $2)
+RETURNING *;

@@ -12,6 +12,32 @@ import (
 	"github.com/google/uuid"
 )
 
+const addFeedForUser = `-- name: AddFeedForUser :one
+INSERT INTO feeds_users(
+	feed_id,
+	user_id
+) VALUES ($1, $2)
+RETURNING id, user_id, feed_id, created_at, updated_at
+`
+
+type AddFeedForUserParams struct {
+	FeedID uuid.UUID
+	UserID uuid.UUID
+}
+
+func (q *Queries) AddFeedForUser(ctx context.Context, arg AddFeedForUserParams) (FeedsUser, error) {
+	row := q.db.QueryRowContext(ctx, addFeedForUser, arg.FeedID, arg.UserID)
+	var i FeedsUser
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.FeedID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createFeed = `-- name: CreateFeed :one
 INSERT INTO feeds(
 	id,
@@ -55,39 +81,6 @@ func (q *Queries) CreateFeed(ctx context.Context, arg CreateFeedParams) (Feed, e
 		&i.LastFetchedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const fetchFeedByUrl = `-- name: FetchFeedByUrl :one
-SELECT
-	id,
-	title,
-	description,
-	url,
-	last_fetched_at
-FROM feeds
-WHERE url = $1
-LIMIT 1
-`
-
-type FetchFeedByUrlRow struct {
-	ID            uuid.UUID
-	Title         string
-	Description   sql.NullString
-	Url           string
-	LastFetchedAt sql.NullTime
-}
-
-func (q *Queries) FetchFeedByUrl(ctx context.Context, url string) (FetchFeedByUrlRow, error) {
-	row := q.db.QueryRowContext(ctx, fetchFeedByUrl, url)
-	var i FetchFeedByUrlRow
-	err := row.Scan(
-		&i.ID,
-		&i.Title,
-		&i.Description,
-		&i.Url,
-		&i.LastFetchedAt,
 	)
 	return i, err
 }
@@ -230,6 +223,39 @@ func (q *Queries) GetDistinctFeedsForUser(ctx context.Context, id uuid.UUID) ([]
 		return nil, err
 	}
 	return items, nil
+}
+
+const getFeedByUrl = `-- name: GetFeedByUrl :one
+SELECT
+	id,
+	title,
+	description,
+	url,
+	last_fetched_at
+FROM feeds
+WHERE url = $1
+LIMIT 1
+`
+
+type GetFeedByUrlRow struct {
+	ID            uuid.UUID
+	Title         string
+	Description   sql.NullString
+	Url           string
+	LastFetchedAt sql.NullTime
+}
+
+func (q *Queries) GetFeedByUrl(ctx context.Context, url string) (GetFeedByUrlRow, error) {
+	row := q.db.QueryRowContext(ctx, getFeedByUrl, url)
+	var i GetFeedByUrlRow
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Description,
+		&i.Url,
+		&i.LastFetchedAt,
+	)
+	return i, err
 }
 
 const getUserFeeds = `-- name: GetUserFeeds :many

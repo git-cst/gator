@@ -29,18 +29,17 @@ Write code that interacts with the database:
 	3 - Setup schema DONE BUT WILL PROBABLY REVISIT
 	4 - Write queries
 		a - Store which users can interact ? User registration? Or integrate with Authelia OIDC? Will need to check
-		b - Store which feeds users want to pull from
-		c - Store the posts that have been archived
+		b - Store which feeds users want to pull from DONE
+		c - Store the posts that have been archived DONE
 
 Write code that handles synchronization
 
-	1 - Read from the database which feeds are stored (distinct)
-	2 - Fan out go funcs to pull from those rss feeds
-		a - Wait group
-		b - Maybe semaphore pattern (only so many go coroutines)?
-	3 - Store results from channel in db
-		a - Probably do so asynchronously.
-		b - Will need to implement mutex locking (I think it's sync in golang)
+	1 - Read from the database which feeds are stored (distinct) DONE
+	2 - Fan out go funcs to pull from those rss feeds DONE
+		a - Wait group DONE
+		b - Maybe semaphore pattern (only so many go coroutines)? DONE
+	3 - Store results from channel in db DONE
+		a - Probably do so asynchronously. DONE
 
 Write code that handles cleanup
 

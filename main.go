@@ -105,6 +105,7 @@ func main() {
 		}
 	}()
 
+	log.Printf("Server up and running on port: %s", config.ServerPort)
 	// Block until we're done
 	<-ctx.Done()
 	fmt.Println("Shutting down...")

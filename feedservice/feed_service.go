@@ -35,7 +35,7 @@ func (s *FeedService) GetDistinctFeeds(ctx context.Context) ([]database.GetDisti
 }
 
 func (s *FeedService) StorePosts(ctx context.Context, feed RSSFeed) error {
-	storedFeed, err := s.queries.FetchFeedByUrl(ctx, feed.Channel.Link)
+	storedFeed, err := s.queries.GetFeedByUrl(ctx, feed.Channel.Link)
 	if errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("no feed with url %q exists: %w", feed.Channel.Link, err)
 	} else if err != nil {

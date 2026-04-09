@@ -47,12 +47,16 @@ type userItem struct {
 	Username string
 }
 
-type pageData struct {
+type feedPageData struct {
 	Users         []*userItem
 	CurrUser      *userItem
 	CurrUserFeeds []*feedItem
 	CurrUserPosts []*postItem
 	ErrorString   string
+}
+
+type addFeedErrorData struct {
+	ErrorString string
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -102,7 +106,7 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 	} else if err != nil {
 		statusCode = http.StatusInternalServerError
 		errMsg = "internal server error"
-		s.respondWithHTML(w, templateName, pageData{
+		s.respondWithHTML(w, templateName, feedPageData{
 			Users:         users,
 			CurrUser:      nil,
 			CurrUserFeeds: currUserFeeds,
@@ -122,7 +126,7 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 		// Can't parse UUID so we exit early
 		statusCode = http.StatusBadRequest
 		errMsg = "invalid user"
-		s.respondWithHTML(w, templateName, pageData{
+		s.respondWithHTML(w, templateName, feedPageData{
 			Users:         users,
 			CurrUser:      nil,
 			CurrUserFeeds: currUserFeeds,
@@ -134,7 +138,7 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 
 	// Exit early as we don't have a user and don't need to request the rest of the data
 	if !userUUID.Valid {
-		s.respondWithHTML(w, templateName, pageData{
+		s.respondWithHTML(w, templateName, feedPageData{
 			Users:         users,
 			CurrUser:      nil,
 			CurrUserFeeds: currUserFeeds,
@@ -148,7 +152,7 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 	if errors.Is(err, sql.ErrNoRows) {
 		statusCode = http.StatusBadRequest
 		errMsg = "user does not exist"
-		s.respondWithHTML(w, templateName, pageData{
+		s.respondWithHTML(w, templateName, feedPageData{
 			Users:         users,
 			CurrUser:      nil,
 			CurrUserFeeds: currUserFeeds,
@@ -159,7 +163,7 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 	} else if err != nil {
 		statusCode = http.StatusInternalServerError
 		errMsg = "internal server error"
-		s.respondWithHTML(w, templateName, pageData{
+		s.respondWithHTML(w, templateName, feedPageData{
 			Users:         users,
 			CurrUser:      nil,
 			CurrUserFeeds: currUserFeeds,
@@ -187,7 +191,7 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		statusCode = http.StatusInternalServerError
 		errMsg = "offset must be an integer"
-		s.respondWithHTML(w, templateName, pageData{
+		s.respondWithHTML(w, templateName, feedPageData{
 			Users:         users,
 			CurrUser:      toUserItem(currUser),
 			CurrUserFeeds: currUserFeeds,
@@ -214,7 +218,7 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	s.respondWithHTML(w, templateName, pageData{
+	s.respondWithHTML(w, templateName, feedPageData{
 		Users:         users,
 		CurrUser:      toUserItem(currUser),
 		CurrUserFeeds: currUserFeeds,
@@ -228,7 +232,8 @@ func (s *Server) handleAddFeed(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	defer r.Body.Close()
 
-	statusCode := http.StatusSeeOther
+	var statusCode int
+	statusCode = http.StatusSeeOther
 
 	r.Body = http.MaxBytesReader(w, r.Body, 1024*1024)
 	feedTitle := r.FormValue("feed-title")
@@ -252,14 +257,18 @@ func (s *Server) handleAddFeed(w http.ResponseWriter, r *http.Request) {
 		feedRow, err := s.queries.GetFeedByUrl(ctx, feedURL)
 		if err != nil {
 			statusCode = http.StatusInternalServerError
-			// Perform error response
+			errMsg := fmt.Sprintf("Failed to retrieve information for %s (%s) due to unexpected error", feedTitle, feedURL)
+			log.Print(errMsg)
+			s.respondWithHTML(w, "add_feed_error.html", addFeedErrorData{ErrorString: errMsg}, statusCode)
 			return
 		}
 
 		feedID = feedRow.ID
 	} else if err != nil {
 		statusCode = http.StatusInternalServerError
-		// Perform error response
+		errMsg := fmt.Sprintf("Failed to add feed %s (%s) due to unexpected error", feedTitle, feedURL)
+		log.Print(errMsg)
+		s.respondWithHTML(w, "add_feed_error.html", addFeedErrorData{ErrorString: errMsg}, statusCode)
 		return
 	} else {
 		feedID = feedRow.ID
@@ -268,7 +277,9 @@ func (s *Server) handleAddFeed(w http.ResponseWriter, r *http.Request) {
 	feedsUsersRow, err := s.subscribeUserToFeed(ctx, r, feedID)
 	if err != nil {
 		statusCode = http.StatusInternalServerError
-		// Perform error response
+		errMsg := fmt.Sprintf("Failed to subscribe to %s (%s) due to unexpected error", feedTitle, feedURL)
+		log.Print(errMsg)
+		s.respondWithHTML(w, "add_feed_error.html", addFeedErrorData{ErrorString: errMsg}, statusCode)
 		return
 	}
 
@@ -295,7 +306,13 @@ func (s *Server) subscribeUserToFeed(ctx context.Context, r *http.Request, feedI
 }
 
 func (s *Server) resolveCurrentUser(r *http.Request) (uuid.NullUUID, error) {
-	userReq := r.URL.Query().Get("user_id")
+	var userReq string
+	if r.Method == http.MethodPost {
+		userReq = r.FormValue("user_id")
+	} else {
+		userReq = r.URL.Query().Get("user_id")
+	}
+
 	if userReq == "" {
 		return uuid.NullUUID{Valid: false}, nil
 	}

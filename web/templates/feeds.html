@@ -1,49 +1,25 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <title>Gator</title>
-    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-  </head>
-  <body>
-    <select
-      hx-get="/feeds"
-      hx-target="#main-content"
-      hx-swap="innerHTML"
-      name="user_id"
-    >
-      <option value="">Select a user...</option>
-      {{ range .Users }}
-      <option
-        value="{{ .ID }}"
-        {{
-        if
-        $.CurrUser
-        }}
-        {{
-        if
-        eq
-        $.CurrUser.ID
-        .ID
-        }}selected{{
-        end
-        }}
-        {{
-        end
-        }}
-      >
-        {{ .Username }}
-      </option>
-      {{ end }}
-    </select>
 
-    <div id="main-content">{{ template "content" . }}</div>
-  </body>
+<head>
+  <meta charset="UTF-8" />
+  <title>Gator</title>
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+</head>
+
+<body>
+  <select hx-get="/feeds" hx-target="#main-content" hx-swap="innerHTML" name="user_id">
+    <option value="">Select a user...</option>
+    {{ range .Users }}
+    <option value="{{ .ID }}" {{ if $.CurrUser }}{{ if eq $.CurrUser.ID .ID }}selected{{ end }}{{ end }}>
+      {{ .Username }}
+    </option>
+    {{ end }}
+  </select>
+  <div id="main-content">{{ template "content" . }}</div>
+</body>
+
 </html>
-
-{{ define "content" }} {{ if .ErrorString }}
-<p>{{ .ErrorString }}</p>
-{{ end }}
 
 <form hx-post="/feeds" hx-target="#main-content" hx-swap="innerHTML">
   {{ if .CurrUser }}
@@ -51,21 +27,26 @@
   {{ end }}
   <input type="text" name="feed-title" placeholder="Title" />
   <input type="text" name="feed-url" placeholder="URL" />
-  <input
-    type="text"
-    name="feed-description"
-    placeholder="Description (optional)"
-  />
+  <input type="text" name="feed-description" placeholder="Description (optional)" />
   <button type="submit">Add feed</button>
 </form>
 
 {{ range .CurrUserFeeds }}
-<div>
+<article class="feed-item">
   <a href="{{ .URL }}">{{ .Title }}</a>
-</div>
-{{ end }} {{ range .CurrUserPosts }}
-<div>
+  <form hx-delete="/feeds" hx-target="#feed-list" hx-swap="outerHTML">
+    <input type="hidden" name="feed-title" value="{{ .Title }}">
+    <input type="hidden" name="feed-url" value="{{ .URL }}">
+    <input type="hidden" name="user_id" value="{{ $.CurrUser.ID }}">
+    <button type="submit">Unsubscribe</button>
+  </form>
+</article>
+{{ end }}
+
+{{ range .CurrUserFeeds }}
+<article class="feed-item">
   <a href="{{ .URL }}">{{ .Title }}</a>
-  <span>{{ .PublishedAt }}</span>
-</div>
-{{ end }} {{ end }}
+</article>
+{{ end }}
+
+{{ end }}

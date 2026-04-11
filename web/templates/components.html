@@ -1,0 +1,8 @@
+{{ define "content" }}
+{{ if .ErrorString }}
+<p>{{ .ErrorString }}</p>
+{{ end }}
+
+{{ define "error" }}
+<p class="error">{{ .ErrorString }}</p>
+{{ end }}

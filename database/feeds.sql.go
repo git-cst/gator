@@ -85,6 +85,49 @@ func (q *Queries) CreateFeed(ctx context.Context, arg CreateFeedParams) (Feed, e
 	return i, err
 }
 
+const deleteFeed = `-- name: DeleteFeed :one
+DELETE FROM feeds WHERE id = $1
+RETURNING id, title, description, url, last_fetched_at, created_at, updated_at
+`
+
+func (q *Queries) DeleteFeed(ctx context.Context, id uuid.UUID) (Feed, error) {
+	row := q.db.QueryRowContext(ctx, deleteFeed, id)
+	var i Feed
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Description,
+		&i.Url,
+		&i.LastFetchedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const deleteFeedForUser = `-- name: DeleteFeedForUser :one
+DELETE FROM feeds_users WHERE user_id = $1 AND feed_id=$2
+RETURNING id, user_id, feed_id, created_at, updated_at
+`
+
+type DeleteFeedForUserParams struct {
+	UserID uuid.UUID
+	FeedID uuid.UUID
+}
+
+func (q *Queries) DeleteFeedForUser(ctx context.Context, arg DeleteFeedForUserParams) (FeedsUser, error) {
+	row := q.db.QueryRowContext(ctx, deleteFeedForUser, arg.UserID, arg.FeedID)
+	var i FeedsUser
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.FeedID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const fetchFeeds = `-- name: FetchFeeds :many
 SELECT 
 	id,

@@ -86,3 +86,11 @@ INSERT INTO feeds_users(
 	user_id
 ) VALUES ($1, $2)
 RETURNING *;
+
+-- name: DeleteFeedForUser :one
+DELETE FROM feeds_users WHERE user_id = $1 AND feed_id=$2
+RETURNING *;
+
+-- name: DeleteFeed :one
+DELETE FROM feeds WHERE id = $1
+RETURNING *;

@@ -39,7 +39,7 @@ type postItem struct {
 	Title       string
 	Description string
 	URL         string
-	PublishedAt time.Time
+	PublishedAt string
 }
 
 type userItem struct {
@@ -55,7 +55,7 @@ type feedPageData struct {
 	ErrorString   string
 }
 
-type addFeedErrorData struct {
+type errorData struct {
 	ErrorString string
 }
 
@@ -98,7 +98,7 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 	var currUserFeeds []*feedItem
 	var currUserPosts []*postItem
 	var errMsg string
-	templateName := getTemplateName(r, "feeds.html", "feeds_partial.html")
+	templateName := getTemplateName(r, "feeds.html")
 
 	usersRows, err := s.queries.GetUsers(ctx)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -189,17 +189,12 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 	offsetStr := r.URL.Query().Get("offset")
 	offsetInt, err := strconv.Atoi(offsetStr)
 	if err != nil {
-		statusCode = http.StatusInternalServerError
-		errMsg = "offset must be an integer"
-		s.respondWithHTML(w, templateName, feedPageData{
-			Users:         users,
-			CurrUser:      toUserItem(currUser),
-			CurrUserFeeds: currUserFeeds,
-			CurrUserPosts: currUserPosts,
-			ErrorString:   errMsg,
-		}, statusCode)
-		return
+		// We just default to 0 since the reasons for Atoi failing are:
+		// 1) There is no offset passed with the query -> first page
+		// 2) Invalid offset passed -> go to first page again
+		offsetInt = 0
 	}
+
 	params := database.GetPostsForUserParams{
 		UserID: currUser.ID,
 		Offset: int32(offsetInt),
@@ -259,7 +254,7 @@ func (s *Server) handleAddFeed(w http.ResponseWriter, r *http.Request) {
 			statusCode = http.StatusInternalServerError
 			errMsg := fmt.Sprintf("Failed to retrieve information for %s (%s) due to unexpected error", feedTitle, feedURL)
 			log.Print(errMsg)
-			s.respondWithHTML(w, "add_feed_error.html", addFeedErrorData{ErrorString: errMsg}, statusCode)
+			s.respondWithHTML(w, "error", errorData{ErrorString: errMsg}, statusCode)
 			return
 		}
 
@@ -268,7 +263,7 @@ func (s *Server) handleAddFeed(w http.ResponseWriter, r *http.Request) {
 		statusCode = http.StatusInternalServerError
 		errMsg := fmt.Sprintf("Failed to add feed %s (%s) due to unexpected error", feedTitle, feedURL)
 		log.Print(errMsg)
-		s.respondWithHTML(w, "add_feed_error.html", addFeedErrorData{ErrorString: errMsg}, statusCode)
+		s.respondWithHTML(w, "error", errorData{ErrorString: errMsg}, statusCode)
 		return
 	} else {
 		feedID = feedRow.ID
@@ -279,11 +274,108 @@ func (s *Server) handleAddFeed(w http.ResponseWriter, r *http.Request) {
 		statusCode = http.StatusInternalServerError
 		errMsg := fmt.Sprintf("Failed to subscribe to %s (%s) due to unexpected error", feedTitle, feedURL)
 		log.Print(errMsg)
-		s.respondWithHTML(w, "add_feed_error.html", addFeedErrorData{ErrorString: errMsg}, statusCode)
+		s.respondWithHTML(w, "error", errorData{ErrorString: errMsg}, statusCode)
 		return
 	}
 
 	redirectURL := fmt.Sprintf("/feeds?user_id=%s", feedsUsersRow.UserID.String())
+	http.Redirect(w, r, redirectURL, statusCode)
+}
+
+/*
+hadnlerDeleteFeed performs a hard delete of a feed for all users.
+Not currently registered as a route, but I might do so in the future to implement admin use?
+*/
+func (s *Server) handlerDeleteFeed(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	defer r.Body.Close()
+
+	var statusCode int
+	statusCode = http.StatusSeeOther
+	r.Body = http.MaxBytesReader(w, r.Body, 1024*1024)
+	feedTitle := r.FormValue("feed-title")
+	feedURL := r.FormValue("feed-url")
+	currUser := r.FormValue("user_id")
+	feedID, err := s.queries.GetFeedByUrl(ctx, feedURL)
+	if errors.Is(err, sql.ErrNoRows) {
+		statusCode = http.StatusBadRequest
+		errMsg := fmt.Sprintf("Feed: %s (%s) not found.", feedTitle, feedURL)
+		s.respondWithHTML(w, "error", errorData{ErrorString: errMsg}, statusCode)
+		return
+	} else if err != nil {
+		statusCode = http.StatusInternalServerError
+		errMsg := fmt.Sprintf("Unexpected error whilst deleting %s (%s)", feedTitle, feedURL)
+		log.Printf("Failed to retrieve %s (%s), error: %v", feedTitle, feedURL, err)
+		s.respondWithHTML(w, "error", errorData{ErrorString: errMsg}, statusCode)
+		return
+	}
+
+	deletedFeed, err := s.queries.DeleteFeed(ctx, feedID.ID)
+	if err != nil {
+		statusCode = http.StatusInternalServerError
+		errMsg := fmt.Sprintf("Unexpected error whilst deleting %s (%s)", feedTitle, feedURL)
+		log.Printf("Failed to retrieve %s (%s), error: %v", feedTitle, feedURL, err)
+		s.respondWithHTML(w, "error", errorData{ErrorString: errMsg}, statusCode)
+		return
+	}
+
+	log.Printf("Successfully deleted feed: %s (%s)", deletedFeed.Title, deletedFeed.Url)
+	redirectURL := fmt.Sprintf("/feeds?user_id=%s", currUser)
+	http.Redirect(w, r, redirectURL, statusCode)
+}
+
+func (s *Server) handleUnsubscribeUserFromFeed(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	defer r.Body.Close()
+
+	var statusCode int
+	statusCode = http.StatusSeeOther
+	r.Body = http.MaxBytesReader(w, r.Body, 1024*1024)
+	feedTitle := r.FormValue("feed-title")
+	feedURL := r.FormValue("feed-url")
+
+	currUserUUID, err := s.resolveCurrentUser(r)
+	if err != nil {
+		// Can't parse UUID so we exit early
+		statusCode = http.StatusBadRequest
+		errMsg := "invalid user"
+		log.Printf("Failed to parse string to UUID whilst unsubbing from %s (%s), error: %v", feedTitle, feedURL, err)
+		s.respondWithHTML(w, "error", errorData{ErrorString: errMsg}, statusCode)
+		return
+	}
+
+	feed, err := s.queries.GetFeedByUrl(ctx, feedURL)
+	if errors.Is(err, sql.ErrNoRows) {
+		statusCode = http.StatusBadRequest
+		errMsg := fmt.Sprintf("Feed: %s (%s) not found.", feedTitle, feedURL)
+		s.respondWithHTML(w, "error", errorData{ErrorString: errMsg}, statusCode)
+		return
+	} else if err != nil {
+		statusCode = http.StatusInternalServerError
+		errMsg := fmt.Sprintf("Unexpected error whilst deleting %s (%s)", feedTitle, feedURL)
+		log.Printf("Failed to retrieve %s (%s), error: %v", feedTitle, feedURL, err)
+		s.respondWithHTML(w, "error", errorData{ErrorString: errMsg}, statusCode)
+		return
+	}
+
+	unsubParams := database.DeleteFeedForUserParams{
+		FeedID: feed.ID,
+		UserID: currUserUUID.UUID,
+	}
+
+	_, err = s.queries.DeleteFeedForUser(ctx, unsubParams)
+	if err != nil {
+		statusCode = http.StatusInternalServerError
+		errMsg := fmt.Sprintf("Unexpected error whilst deleting %s (%s)", feedTitle, feedURL)
+		log.Printf("Failed to retrieve %s (%s), error: %v", feedTitle, feedURL, err)
+		s.respondWithHTML(w, "error", errorData{ErrorString: errMsg}, statusCode)
+		return
+	}
+
+	log.Printf("Successfully unsubscribed user %s from feed: %s (%s)", currUserUUID.UUID.String(), feedTitle, feedURL)
+	redirectURL := fmt.Sprintf("/feeds?user_id=%s", currUserUUID.UUID.String())
 	http.Redirect(w, r, redirectURL, statusCode)
 }
 
@@ -307,7 +399,7 @@ func (s *Server) subscribeUserToFeed(ctx context.Context, r *http.Request, feedI
 
 func (s *Server) resolveCurrentUser(r *http.Request) (uuid.NullUUID, error) {
 	var userReq string
-	if r.Method == http.MethodPost {
+	if r.Method == http.MethodPost || r.Method == http.MethodDelete {
 		userReq = r.FormValue("user_id")
 	} else {
 		userReq = r.URL.Query().Get("user_id")
@@ -354,9 +446,9 @@ func respondWithJSON(w http.ResponseWriter, responseData any, statusCode int) {
 	}
 }
 
-func getTemplateName(r *http.Request, fullPage string, partial string) string {
+func getTemplateName(r *http.Request, fullPage string) string {
 	if r.Header.Get("HX-Request") == "true" {
-		return partial
+		return "content"
 	}
 	return fullPage
 }

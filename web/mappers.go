@@ -21,7 +21,7 @@ func toPostItem(row database.GetPostsForUserRow) *postItem {
 		Title:       row.Title,
 		Description: description,
 		URL:         row.Url,
-		PublishedAt: row.PublishedAt,
+		PublishedAt: row.PublishedAt.Format("02-01-2006 15:04"),
 	}
 }
 

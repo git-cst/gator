@@ -1,5 +1,6 @@
 -- name: CreatePost :one
 INSERT INTO posts(
+	id,
 	created_at,
 	updated_at,
 	title,
@@ -15,7 +16,8 @@ VALUES (
     $4,
     $5,
     $6,
-    $7
+    $7,
+    $8
 )
 RETURNING *;
 
@@ -34,5 +36,6 @@ ON p.feed_id = fu.feed_id
 WHERE fu.user_id = $1
 
 ORDER BY p.published_at DESC
+LIMIT 50
 OFFSET $2;
 

@@ -15,6 +15,7 @@ import (
 
 const createPost = `-- name: CreatePost :one
 INSERT INTO posts(
+	id,
 	created_at,
 	updated_at,
 	title,
@@ -30,12 +31,14 @@ VALUES (
     $4,
     $5,
     $6,
-    $7
+    $7,
+    $8
 )
 RETURNING id, feed_id, title, url, description, published_at, created_at, updated_at
 `
 
 type CreatePostParams struct {
+	ID          uuid.UUID
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 	Title       string
@@ -47,6 +50,7 @@ type CreatePostParams struct {
 
 func (q *Queries) CreatePost(ctx context.Context, arg CreatePostParams) (Post, error) {
 	row := q.db.QueryRowContext(ctx, createPost,
+		arg.ID,
 		arg.CreatedAt,
 		arg.UpdatedAt,
 		arg.Title,
@@ -84,6 +88,7 @@ ON p.feed_id = fu.feed_id
 WHERE fu.user_id = $1
 
 ORDER BY p.published_at DESC
+LIMIT 50
 OFFSET $2
 `
 

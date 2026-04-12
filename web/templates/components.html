@@ -1,6 +1,7 @@
 {{ define "content" }}
 {{ if .ErrorString }}
-<p>{{ .ErrorString }}</p>
+{{ template "error" . }}
+{{ end }}
 {{ end }}
 
 {{ define "error" }}

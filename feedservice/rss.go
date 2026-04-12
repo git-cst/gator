@@ -1,6 +1,7 @@
 package feedservice
 
 type RSSFeed struct {
+	URL     string
 	Channel struct {
 		Title       string    `xml:"title"`
 		Link        string    `xml:"link"`

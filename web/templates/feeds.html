@@ -16,11 +16,15 @@
     </option>
     {{ end }}
   </select>
-  <div id="main-content">{{ template "content" . }}</div>
+
+  <div id="main-content">
+    {{ template "content" . }}
+  </div>
 </body>
 
 </html>
 
+{{ define "content" }}
 <form hx-post="/feeds" hx-target="#main-content" hx-swap="innerHTML">
   {{ if .CurrUser }}
   <input type="hidden" name="user_id" value="{{ .CurrUser.ID }}" />
@@ -31,22 +35,34 @@
   <button type="submit">Add feed</button>
 </form>
 
-{{ range .CurrUserFeeds }}
-<article class="feed-item">
-  <a href="{{ .URL }}">{{ .Title }}</a>
-  <form hx-delete="/feeds" hx-target="#feed-list" hx-swap="outerHTML">
-    <input type="hidden" name="feed-title" value="{{ .Title }}">
-    <input type="hidden" name="feed-url" value="{{ .URL }}">
-    <input type="hidden" name="user_id" value="{{ $.CurrUser.ID }}">
-    <button type="submit">Unsubscribe</button>
-  </form>
-</article>
-{{ end }}
+<div id="feed-list">
+  {{ if .CurrUser }}
+  {{ range .CurrUserFeeds }}
+  <article class="feed-item">
+    <a href="{{ .URL }}">{{ .Title }}</a>
+    <form hx-delete="/feeds" hx-target="#main-content" hx-swap="outerHTML">
+      <input type="hidden" name="feed-title" value="{{ .Title }}">
+      <input type="hidden" name="feed-url" value="{{ .URL }}">
+      <input type="hidden" name="user_id" value="{{ $.CurrUser.ID }}">
+      <button type="submit">Unsubscribe</button>
+    </form>
+  </article>
+  {{ end }}
+  {{ end }}
+</div>
 
-{{ range .CurrUserFeeds }}
-<article class="feed-item">
-  <a href="{{ .URL }}">{{ .Title }}</a>
-</article>
-{{ end }}
-
+<div id="button-container">
+  {{ if .CurrUser }}
+  <button hx-get="/feeds" hx-target="#main-content"
+    hx-vals='{"user_id": "{{ .CurrUser.ID }}", "offset": "{{ .PrevOffset }}"}' {{ if eq .CurrOffset 0 }}disabled{{ end
+    }}>
+    Previous
+  </button>
+  <button hx-get="/feeds" hx-target="#main-content"
+    hx-vals='{"user_id": "{{ .CurrUser.ID }}", "offset": "{{ .NextOffset }}"}' {{ if not .HasNextPage }}disabled{{ end
+    }}>
+    Next
+  </button>
+  {{ end }}
+</div>
 {{ end }}

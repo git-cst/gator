@@ -14,19 +14,23 @@ import (
 
 const addFeedForUser = `-- name: AddFeedForUser :one
 INSERT INTO feeds_users(
+	id,
 	feed_id,
-	user_id
-) VALUES ($1, $2)
+	user_id,
+	created_at,
+	updated_at
+) VALUES ($1, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 RETURNING id, user_id, feed_id, created_at, updated_at
 `
 
 type AddFeedForUserParams struct {
+	ID     uuid.UUID
 	FeedID uuid.UUID
 	UserID uuid.UUID
 }
 
 func (q *Queries) AddFeedForUser(ctx context.Context, arg AddFeedForUserParams) (FeedsUser, error) {
-	row := q.db.QueryRowContext(ctx, addFeedForUser, arg.FeedID, arg.UserID)
+	row := q.db.QueryRowContext(ctx, addFeedForUser, arg.ID, arg.FeedID, arg.UserID)
 	var i FeedsUser
 	err := row.Scan(
 		&i.ID,

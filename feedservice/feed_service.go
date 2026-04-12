@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"gator/database"
+
+	"github.com/google/uuid"
 )
 
 type FeedService struct {
@@ -35,7 +37,7 @@ func (s *FeedService) GetDistinctFeeds(ctx context.Context) ([]database.GetDisti
 }
 
 func (s *FeedService) StorePosts(ctx context.Context, feed RSSFeed) error {
-	storedFeed, err := s.queries.GetFeedByUrl(ctx, feed.Channel.Link)
+	storedFeed, err := s.queries.GetFeedByUrl(ctx, feed.URL)
 	if errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("no feed with url %q exists: %w", feed.Channel.Link, err)
 	} else if err != nil {
@@ -54,6 +56,7 @@ func (s *FeedService) StorePosts(ctx context.Context, feed RSSFeed) error {
 		}
 
 		_, err = s.queries.CreatePost(ctx, database.CreatePostParams{
+			ID:          uuid.New(),
 			FeedID:      storedFeed.ID,
 			Title:       post.Title,
 			Description: postDescription,
@@ -63,7 +66,7 @@ func (s *FeedService) StorePosts(ctx context.Context, feed RSSFeed) error {
 			UpdatedAt:   time.Now(),
 		})
 		if err != nil {
-			log.Printf("feed post not able to be inserted: %q at link: %v", post.Title, post.Link)
+			log.Printf("feed post not able to be inserted: %q at link: %v\nReason: %v", post.Title, post.Link, err)
 		}
 	}
 
@@ -184,6 +187,8 @@ func fetchAndParse(ctx context.Context, httpClient *http.Client, fetchURL string
 		feed.Channel.Items[i].Title = html.UnescapeString(feed.Channel.Items[i].Title)
 		feed.Channel.Items[i].Description = html.UnescapeString(feed.Channel.Items[i].Description)
 	}
+
+	feed.URL = fetchURL
 
 	return &feed, nil
 }

@@ -82,9 +82,12 @@ WHERE u.id = $1;
 
 -- name: AddFeedForUser :one
 INSERT INTO feeds_users(
+	id,
 	feed_id,
-	user_id
-) VALUES ($1, $2)
+	user_id,
+	created_at,
+	updated_at
+) VALUES ($1, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 RETURNING *;
 
 -- name: DeleteFeedForUser :one

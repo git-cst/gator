@@ -125,7 +125,7 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	userUUID, err := s.resolveCurrentUser(r)
+	userUUID, fromCookie, err := s.resolveCurrentUser(r)
 	if err != nil {
 		// Can't parse UUID so we exit early
 		statusCode = http.StatusBadRequest
@@ -142,6 +142,13 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 
 	// Exit early as we don't have a user and don't need to request the rest of the data
 	if !userUUID.Valid {
+		http.SetCookie(w, &http.Cookie{
+			Name:   "user_id",
+			Value:  "",
+			Path:   "/",
+			MaxAge: -1,
+		})
+
 		s.respondWithHTML(w, templateName, feedPageData{
 			Users:         users,
 			CurrUser:      nil,
@@ -174,6 +181,19 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 			CurrUserPosts: currUserPosts,
 			ErrorString:   errMsg,
 		}, statusCode)
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:  "user_id",
+		Value: currUser.ID.String(),
+		Path:  "/",
+	})
+
+	if fromCookie {
+		statusCode = http.StatusSeeOther
+		redirectURL := fmt.Sprintf("/feeds?user_id=%s", currUser.ID.String())
+		http.Redirect(w, r, redirectURL, statusCode)
 		return
 	}
 
@@ -301,7 +321,7 @@ func (s *Server) handleAddFeed(w http.ResponseWriter, r *http.Request) {
 }
 
 /*
-hadnlerDeleteFeed performs a hard delete of a feed for all users.
+handlerDeleteFeed performs a hard delete of a feed for all users.
 Not currently registered as a route, but I might do so in the future to implement admin use?
 */
 func (s *Server) handlerDeleteFeed(w http.ResponseWriter, r *http.Request) {
@@ -354,7 +374,7 @@ func (s *Server) handleUnsubscribeUserFromFeed(w http.ResponseWriter, r *http.Re
 	feedTitle := r.FormValue("feed-title")
 	feedURL := r.FormValue("feed-url")
 
-	currUserUUID, err := s.resolveCurrentUser(r)
+	currUserUUID, _, err := s.resolveCurrentUser(r)
 	if err != nil {
 		// Can't parse UUID so we exit early
 		statusCode = http.StatusBadRequest
@@ -368,6 +388,7 @@ func (s *Server) handleUnsubscribeUserFromFeed(w http.ResponseWriter, r *http.Re
 	if errors.Is(err, sql.ErrNoRows) {
 		statusCode = http.StatusBadRequest
 		errMsg := fmt.Sprintf("Feed: %s (%s) not found.", feedTitle, feedURL)
+		log.Printf("Failed to retrieve %s (%s), error: %v", feedTitle, feedURL, err)
 		s.respondWithHTML(w, "error", errorData{ErrorString: errMsg}, statusCode)
 		return
 	} else if err != nil {
@@ -398,7 +419,7 @@ func (s *Server) handleUnsubscribeUserFromFeed(w http.ResponseWriter, r *http.Re
 }
 
 func (s *Server) subscribeUserToFeed(ctx context.Context, r *http.Request, feedID uuid.UUID) (database.FeedsUser, error) {
-	userUUID, err := s.resolveCurrentUser(r)
+	userUUID, _, err := s.resolveCurrentUser(r)
 	if err != nil {
 		return database.FeedsUser{}, err
 	}
@@ -416,27 +437,46 @@ func (s *Server) subscribeUserToFeed(ctx context.Context, r *http.Request, feedI
 	return feedUserRow, nil
 }
 
-func (s *Server) resolveCurrentUser(r *http.Request) (uuid.NullUUID, error) {
-	var userReq string
+func (s *Server) resolveCurrentUser(r *http.Request) (userID uuid.NullUUID, fromCookie bool, err error) {
+	var userStr string
+
 	if r.Method == http.MethodPost || r.Method == http.MethodDelete {
-		userReq = r.FormValue("user_id")
+		userStr = r.FormValue("user_id")
 	} else {
-		userReq = r.URL.Query().Get("user_id")
+		userStr = r.URL.Query().Get("user_id")
 	}
 
-	if userReq == "" {
-		return uuid.NullUUID{Valid: false}, nil
+	// user explicitly deselected the user - skip checking cookie
+	_, keyPresent := r.URL.Query()["user_id"]
+	if userStr == "" && keyPresent {
+		return uuid.NullUUID{Valid: false}, false, nil
 	}
 
-	parsedUUID, err := uuid.Parse(userReq)
+	var userCookie *http.Cookie
+	if userStr == "" {
+		userCookie, _ = r.Cookie("user_id")
+	}
+
+	if userStr == "" && userCookie == nil {
+		// nothings valid
+		return uuid.NullUUID{Valid: false}, fromCookie, nil
+	}
+
+	if userCookie != nil && userCookie.Value != "" {
+		// cookie is valid we can use this
+		userStr = userCookie.Value
+		fromCookie = true
+	}
+
+	parsedUUID, err := uuid.Parse(userStr)
 	if err != nil {
-		return uuid.NullUUID{Valid: false}, err
+		return uuid.NullUUID{Valid: false}, fromCookie, err
 	}
 
 	return uuid.NullUUID{
 		UUID:  parsedUUID,
 		Valid: true,
-	}, nil
+	}, fromCookie, nil
 }
 
 func (s *Server) respondWithHTML(w http.ResponseWriter, templateName string, responseData any, statusCode int) {

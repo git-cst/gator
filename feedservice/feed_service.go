@@ -16,6 +16,7 @@ import (
 	"gator/database"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
 
 type FeedService struct {
@@ -65,7 +66,9 @@ func (s *FeedService) StorePosts(ctx context.Context, feed RSSFeed) error {
 			CreatedAt:   time.Now(),
 			UpdatedAt:   time.Now(),
 		})
-		if err != nil {
+		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "23505" {
+			// OK that there is a duplicate post, silently fail
+		} else if err != nil {
 			log.Printf("feed post not able to be inserted: %q at link: %v\nReason: %v", post.Title, post.Link, err)
 		}
 	}

@@ -22,37 +22,28 @@ import (
 
 /*
 TODO
-Write code that interacts with the database:
+Bugs:
 
-	1 - Initialize the db DONE
-	2 - Connect to the db DONE
-	3 - Setup schema DONE BUT WILL PROBABLY REVISIT
-	4 - Write queries
-		a - Store which users can interact ? User registration? Or integrate with Authelia OIDC? Will need to check
-		b - Store which feeds users want to pull from DONE
-		c - Store the posts that have been archived DONE
+User selector disappears after cookie redirect on page return
+Pagination offset lost after add/unsubscribe redirect — should preserve ?offset= in redirect URL
+BBC RSS feed (and potentially others) have malformed XML — consider gofeed library for more lenient parsing
 
-Write code that handles synchronization
+Features:
 
-	1 - Read from the database which feeds are stored (distinct) DONE
-	2 - Fan out go funcs to pull from those rss feeds DONE
-		a - Wait group DONE
-		b - Maybe semaphore pattern (only so many go coroutines)? DONE
-	3 - Store results from channel in db DONE
-		a - Probably do so asynchronously. DONE
+Split into two pages: /feeds for subscription management, /posts for reading
+Feed discovery page — show all feeds in db, allow subscribing to existing feeds without re-adding URL
+POST /feeds/subscribe route — complement to existing /feeds/unsubscribe
+Read/unread tracking — users_posts junction table, change post styling rather than hiding
+Stale post archival — delete posts older than 180 days via background job
+  - Make it so that in the environment file the period is configurable and whether or not deletion is just archival.
 
-Write code that handles cleanup
+# Stale user cleanup — soft delete then hard delete after 90 days
+CSS make it look perty
 
-	1 - Stale posts (maybe archive just 180 days worth?)
-	2 - Stale users (if a user has been soft deleted, then yeet after 90 days)
+Infrastructure:
 
-Write code that provides the data from the database to users as a static webpage
-
-	1 - On start up provide the data via port forwarding ####.
-	2 - Write the handlers for the links?
-	3 - Add a simple timer for the next refresh?
-	4 - Maybe write a handler to get the newest links?
-	5 - Refresh on completion of database synchronization
+Containerisation with Docker and docker-compose
+OIDC authentication via Authelia — replaces current manual user seeding
 */
 func main() {
 	godotenv.Load()

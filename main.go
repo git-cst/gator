@@ -25,7 +25,6 @@ TODO
 Bugs:
 
 User selector disappears after cookie redirect on page return
-Pagination offset lost after add/unsubscribe redirect — should preserve ?offset= in redirect URL
 BBC RSS feed (and potentially others) have malformed XML — consider gofeed library for more lenient parsing
 
 Features:
@@ -50,13 +49,13 @@ OIDC authentication via Authelia — replaces current manual user seeding
 NOTE
 **Future Enhancements**
 *Observability & Health*
-Prometheus Metrics: 
+Prometheus Metrics:
 Implement a /metrics endpoint using prometheus/client_golang to track:
 - Feed fetch success/failure rates.
 - Database query latency.
 - Number of active users and total post counts.
 
-Blackbox Monitoring: 
+Blackbox Monitoring:
 Configure a /health endpoint for uptime checks and latency monitoring via Prometheus Blackbox Exporter.
 
 **Semantic Intelligence (The "Daily Brief")**
@@ -68,9 +67,9 @@ Configure a /health endpoint for uptime checks and latency monitoring via Promet
 - Use pgvector to semantically cluster similar posts, allowing for "More like this" features without manual tagging.
 
 *User Experience & Scalability*
-Live-ish Refresh: 
+Live-ish Refresh:
 - Implement a "Soft Refresh" using HTMX every polling to check for new feed items without a manual page reload.
-Hybrid Storage: 
+Hybrid Storage:
 - Maybe move feed content to a filesystem-based cache while keeping metadata in Postgres to keep the DB size lean (throw the data into the NAS?).
 */
 func main() {

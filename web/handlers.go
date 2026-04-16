@@ -143,7 +143,7 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 	// Exit early as we don't have a user and don't need to request the rest of the data
 	if !userUUID.Valid {
 		http.SetCookie(w, &http.Cookie{
-			Name:   "user_id",
+			Name:   "user-id",
 			Value:  "",
 			Path:   "/",
 			MaxAge: -1,
@@ -185,14 +185,14 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.SetCookie(w, &http.Cookie{
-		Name:  "user_id",
+		Name:  "user-id",
 		Value: currUser.ID.String(),
 		Path:  "/",
 	})
 
 	if fromCookie {
 		statusCode = http.StatusSeeOther
-		redirectURL := fmt.Sprintf("/feeds?user_id=%s", currUser.ID.String())
+		redirectURL := fmt.Sprintf("/feeds?user-id=%s", currUser.ID.String())
 		http.Redirect(w, r, redirectURL, statusCode)
 		return
 	}
@@ -210,26 +210,11 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	offsetStr := r.URL.Query().Get("offset")
-	offsetInt, err := strconv.Atoi(offsetStr)
-	if err != nil {
-		// We just default to 0 since the reasons for Atoi failing are:
-		// 1) There is no offset passed with the query -> first page
-		// 2) Invalid offset passed -> go to first page again
-		offsetInt = 0
-	}
-
-	currOffset := offsetInt
-	prevOffset := currOffset - 50
-	nextOffset := currOffset + 50
-
-	if prevOffset < 0 {
-		prevOffset = 0
-	}
+	prevOffset, currOffset, nextOffset := s.resolveOffsets(r)
 
 	params := database.GetPostsForUserParams{
 		UserID: currUser.ID,
-		Offset: int32(offsetInt),
+		Offset: int32(currOffset),
 	}
 
 	userPostRows, err := s.queries.GetPostsForUser(ctx, params)
@@ -316,7 +301,9 @@ func (s *Server) handleAddFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	redirectURL := fmt.Sprintf("/feeds?user_id=%s", feedsUsersRow.UserID.String())
+	_, currOffset, _ := s.resolveOffsets(r)
+
+	redirectURL := fmt.Sprintf("/feeds?user-id=%s&%s", feedsUsersRow.UserID.String(), strconv.Itoa(currOffset))
 	http.Redirect(w, r, redirectURL, statusCode)
 }
 
@@ -334,7 +321,7 @@ func (s *Server) handlerDeleteFeed(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 1024*1024)
 	feedTitle := r.FormValue("feed-title")
 	feedURL := r.FormValue("feed-url")
-	currUser := r.FormValue("user_id")
+	currUser := r.FormValue("user-id")
 	feedID, err := s.queries.GetFeedByUrl(ctx, feedURL)
 	if errors.Is(err, sql.ErrNoRows) {
 		statusCode = http.StatusBadRequest
@@ -359,7 +346,7 @@ func (s *Server) handlerDeleteFeed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("Successfully deleted feed: %s (%s)", deletedFeed.Title, deletedFeed.Url)
-	redirectURL := fmt.Sprintf("/feeds?user_id=%s", currUser)
+	redirectURL := fmt.Sprintf("/feeds?user-id=%s", currUser)
 	http.Redirect(w, r, redirectURL, statusCode)
 }
 
@@ -413,8 +400,10 @@ func (s *Server) handleUnsubscribeUserFromFeed(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	_, currOffsetInt, _ := s.resolveOffsets(r)
+
 	log.Printf("Successfully unsubscribed user %s from feed: %s (%s)", currUserUUID.UUID.String(), feedTitle, feedURL)
-	redirectURL := fmt.Sprintf("/feeds?user_id=%s", currUserUUID.UUID.String())
+	redirectURL := fmt.Sprintf("/feeds?user-id=%s&offset=%s", currUserUUID.UUID.String(), strconv.Itoa(currOffsetInt))
 	http.Redirect(w, r, redirectURL, statusCode)
 }
 
@@ -437,24 +426,51 @@ func (s *Server) subscribeUserToFeed(ctx context.Context, r *http.Request, feedI
 	return feedUserRow, nil
 }
 
+func (s *Server) resolveOffsets(r *http.Request) (prevOffset int, currOffset int, nextOffset int) {
+	var offsetStr string
+	if r.Method == http.MethodPost || r.Method == http.MethodDelete {
+		offsetStr = r.FormValue("offset")
+	} else {
+		offsetStr = r.URL.Query().Get("offset")
+	}
+
+	offsetInt, err := strconv.Atoi(offsetStr)
+	if err != nil {
+		// We just default to 0 since the reasons for Atoi failing are:
+		// 1) There is no offset passed with the query -> first page
+		// 2) Invalid offset passed -> go to first page again
+		offsetInt = 0
+	}
+
+	currOffset = offsetInt
+	prevOffset = currOffset - 50
+	nextOffset = currOffset + 50
+
+	if prevOffset < 0 {
+		prevOffset = 0
+	}
+
+	return prevOffset, currOffset, nextOffset
+}
+
 func (s *Server) resolveCurrentUser(r *http.Request) (userID uuid.NullUUID, fromCookie bool, err error) {
 	var userStr string
 
 	if r.Method == http.MethodPost || r.Method == http.MethodDelete {
-		userStr = r.FormValue("user_id")
+		userStr = r.FormValue("user-id")
 	} else {
-		userStr = r.URL.Query().Get("user_id")
+		userStr = r.URL.Query().Get("user-id")
 	}
 
 	// user explicitly deselected the user - skip checking cookie
-	_, keyPresent := r.URL.Query()["user_id"]
+	_, keyPresent := r.URL.Query()["user-id"]
 	if userStr == "" && keyPresent {
 		return uuid.NullUUID{Valid: false}, false, nil
 	}
 
 	var userCookie *http.Cookie
 	if userStr == "" {
-		userCookie, _ = r.Cookie("user_id")
+		userCookie, _ = r.Cookie("user-id")
 	}
 
 	if userStr == "" && userCookie == nil {

@@ -105,11 +105,10 @@ func main() {
 	var wg sync.WaitGroup
 
 	// Start background synchronization
-	wg.Add(1)
-	go func() {
+	wg.Go(func() {
 		defer wg.Done()
 		feedservice.Start(ctx, feedService)
-	}()
+	})
 
 	// Start web server
 	srv, err := web.NewServer(queries, config.TemplateDir, config.ServerPort)

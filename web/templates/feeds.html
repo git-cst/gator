@@ -8,7 +8,7 @@
 </head>
 
 <body>
-  <select hx-get="/feeds" hx-target="#main-content" hx-swap="innerHTML" name="user-id">
+  <select hx-get="/feeds" hx-target="#main-content" hx-swap="innerHTML" name="user_id">
     <option value="">Select a user...</option>
     {{ range .Users }}
     <option value="{{ .ID }}" {{ if $.CurrUser }}{{ if eq $.CurrUser.ID .ID }}selected{{ end }}{{ end }}>
@@ -27,11 +27,11 @@
 {{ define "content" }}
 <form hx-post="/feeds" hx-target="#main-content" hx-swap="innerHTML">
   {{ if .CurrUser }}
-  <input type="hidden" name="user-id" value="{{ .CurrUser.ID }}" />
+  <input type="hidden" name="user_id" value="{{ .CurrUser.ID }}" />
   {{ end }}
-  <input type="text" name="feed-title" placeholder="Title" />
-  <input type="text" name="feed-url" placeholder="URL" />
-  <input type="text" name="feed-description" placeholder="Description (optional)" />
+  <input type="text" name="feed_title" placeholder="Title" />
+  <input type="text" name="feed_url" placeholder="URL" />
+  <input type="text" name="feed_description" placeholder="Description (optional)" />
   <button type="submit">Add feed</button>
 </form>
 
@@ -45,10 +45,10 @@
     <span class="feed-container">
       <a href="{{ .URL }}">{{ .Title }}</a>
       <form hx-post="/feeds/unsubscribe" hx-target="#main-content" hx-swap="innerHTML">
-        <input type="hidden" name="feed-title" value="{{ .Title }}">
-        <input type="hidden" name="feed-url" value="{{ .URL }}">
-        <input type="hidden" name="user-id" value="{{ $.CurrUser.ID }}">
-        <input type="hidden" name="curr-offset" value="{{ $.CurrOffset }}">
+        <input type="hidden" name="feed_title" value="{{ .Title }}">
+        <input type="hidden" name="feed_url" value="{{ .URL }}">
+        <input type="hidden" name="user_id" value="{{ $.CurrUser.ID }}">
+        <input type="hidden" name="curr_offset" value="{{ $.CurrOffset }}">
         <button type="submit">Unsubscribe</button>
       </form>
     </span>
@@ -74,12 +74,12 @@
 <div id="button-container">
   {{ if .CurrUser }}
   <button hx-get="/feeds" hx-target="#main-content"
-    hx-vals='{"user-id": "{{ .CurrUser.ID }}", "offset": "{{ .PrevOffset }}"}' {{ if eq .CurrOffset 0 }}disabled{{ end
+    hx-vals='{"user_id": "{{ .CurrUser.ID }}", "offset": "{{ .PrevOffset }}"}' {{ if eq .CurrOffset 0 }}disabled{{ end
     }}>
     Previous
   </button>
   <button hx-get="/feeds" hx-target="#main-content"
-    hx-vals='{"user-id": "{{ .CurrUser.ID }}", "offset": "{{ .NextOffset }}"}' {{ if not .HasNextPage }}disabled{{ end
+    hx-vals='{"user_id": "{{ .CurrUser.ID }}", "offset": "{{ .NextOffset }}"}' {{ if not .HasNextPage }}disabled{{ end
     }}>
     Next
   </button>

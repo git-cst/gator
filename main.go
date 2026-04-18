@@ -84,14 +84,15 @@ func main() {
 	defer stop()
 
 	// Open database and then check if connection can be established
-	db, err := sql.Open(config.DBDriver, config.DBURL)
+	dbConfig := config.DBConfig
+	db, err := sql.Open(dbConfig.DBDriver, dbConfig.DBURL)
 	if err != nil {
 		log.Fatalf("failed to open database: %v", err)
 	}
 	defer db.Close()
 
-	if err = database.WaitForDB(config.DBConnWait, config.DBConnAttempts, db); err != nil {
-		log.Fatalf("could not connect to database after 10 * %q: %v", config.DBConnWait, err)
+	if err = database.WaitForDB(dbConfig, db); err != nil {
+		log.Fatalf("could not connect to database after 10 * %q: %v", dbConfig.DBConnWait, err)
 	}
 
 	// Ensure DB is up-to-date

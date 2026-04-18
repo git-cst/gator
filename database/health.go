@@ -5,9 +5,14 @@ import (
 	"fmt"
 	"log"
 	"time"
+
+	"gator/config"
 )
 
-func WaitForDB(waitTime time.Duration, attempts uint8, db *sql.DB) error {
+func WaitForDB(dbConfig *config.DBConfig, db *sql.DB) error {
+	attempts := dbConfig.DBConnAttempts
+	waitTime := dbConfig.DBConnWait
+
 	for attempt := range attempts {
 		if err := db.Ping(); err == nil {
 			return nil

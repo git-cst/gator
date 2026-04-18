@@ -29,9 +29,10 @@ type healthResponse struct {
 }
 
 type feedItem struct {
-	ID    uuid.UUID
-	Title string
-	URL   string
+	ID         uuid.UUID
+	Title      string
+	URL        string
+	Subscribed bool
 }
 
 type postItem struct {
@@ -47,16 +48,31 @@ type userItem struct {
 	Username string
 }
 
+type userContext struct {
+	Users    []*userItem
+	CurrUser *userItem
+}
+
+type navigationContext struct {
+	CurrOffset  int32
+	PrevOffset  int32
+	NextOffset  int32
+	HasNextPage bool
+}
+
 type feedPageData struct {
-	Users         []*userItem
-	CurrUser      *userItem
-	CurrUserFeeds []*feedItem
-	CurrUserPosts []*postItem
-	CurrOffset    int32
-	PrevOffset    int32
-	NextOffset    int32
-	HasNextPage   bool
-	ErrorString   string
+	userContext
+	navigationContext
+	Feeds       []*feedItem
+	ErrorString string
+}
+
+type postPageData struct {
+	userContext
+	navigationContext
+	Feeds       []*feedItem
+	Posts       []*postItem
+	ErrorString string
 }
 
 type errorData struct {
@@ -98,150 +114,59 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	var statusCode int
-	var users []*userItem
 	var currUserFeeds []*feedItem
-	var currUserPosts []*postItem
 	var errMsg string
-	templateName := getTemplateName(r, "feeds.html")
+	templateName := getTemplateName(r, "feeds.html", "feedContent")
 
-	usersRows, err := s.queries.GetUsers(ctx)
-	if errors.Is(err, sql.ErrNoRows) {
-		statusCode = http.StatusNoContent
-	} else if err != nil {
-		statusCode = http.StatusInternalServerError
-		errMsg = "internal server error"
-		s.respondWithHTML(w, templateName, feedPageData{
-			Users:         users,
-			CurrUser:      nil,
-			CurrUserFeeds: currUserFeeds,
-			CurrUserPosts: currUserPosts,
-			ErrorString:   errMsg,
-		}, statusCode)
-		return
-	} else {
-		statusCode = http.StatusOK
-		for _, row := range usersRows {
-			users = append(users, toUserItem(row))
-		}
-	}
-
-	userUUID, fromCookie, err := s.resolveCurrentUser(r)
+	userCtx, fromCookie, err := s.getUserContext(r, w)
 	if err != nil {
-		// Can't parse UUID so we exit early
-		statusCode = http.StatusBadRequest
-		errMsg = "invalid user"
-		s.respondWithHTML(w, templateName, feedPageData{
-			Users:         users,
-			CurrUser:      nil,
-			CurrUserFeeds: currUserFeeds,
-			CurrUserPosts: currUserPosts,
-			ErrorString:   errMsg,
-		}, statusCode)
+		switch {
+		case errors.Is(err, errNoUser):
+			s.respondWithHTML(w, templateName, feedPageData{userContext: userCtx}, http.StatusOK)
+		case errors.Is(err, errInvalidUser):
+			s.respondWithHTML(w, templateName, feedPageData{userContext: userCtx, ErrorString: "invalid user"}, http.StatusBadRequest)
+		case errors.Is(err, errInternalUser):
+			s.respondWithHTML(w, templateName, feedPageData{userContext: userCtx, ErrorString: "internal server error"}, http.StatusInternalServerError)
+		}
 		return
 	}
-
-	// Exit early as we don't have a user and don't need to request the rest of the data
-	if !userUUID.Valid {
-		http.SetCookie(w, &http.Cookie{
-			Name:   "user-id",
-			Value:  "",
-			Path:   "/",
-			MaxAge: -1,
-		})
-
-		s.respondWithHTML(w, templateName, feedPageData{
-			Users:         users,
-			CurrUser:      nil,
-			CurrUserFeeds: currUserFeeds,
-			CurrUserPosts: currUserPosts,
-			ErrorString:   errMsg,
-		}, statusCode)
-		return
-	}
-
-	currUser, err := s.queries.GetUserById(ctx, userUUID.UUID)
-	if errors.Is(err, sql.ErrNoRows) {
-		statusCode = http.StatusBadRequest
-		errMsg = "user does not exist"
-		s.respondWithHTML(w, templateName, feedPageData{
-			Users:         users,
-			CurrUser:      nil,
-			CurrUserFeeds: currUserFeeds,
-			CurrUserPosts: currUserPosts,
-			ErrorString:   errMsg,
-		}, statusCode)
-		return
-	} else if err != nil {
-		statusCode = http.StatusInternalServerError
-		errMsg = "internal server error"
-		s.respondWithHTML(w, templateName, feedPageData{
-			Users:         users,
-			CurrUser:      nil,
-			CurrUserFeeds: currUserFeeds,
-			CurrUserPosts: currUserPosts,
-			ErrorString:   errMsg,
-		}, statusCode)
-		return
-	}
-
-	http.SetCookie(w, &http.Cookie{
-		Name:  "user-id",
-		Value: currUser.ID.String(),
-		Path:  "/",
-	})
 
 	if fromCookie {
 		statusCode = http.StatusSeeOther
-		redirectURL := fmt.Sprintf("/feeds?user-id=%s", currUser.ID.String())
+		redirectURL := fmt.Sprintf("/feeds?user_id=%s", userCtx.CurrUser.ID.String())
 		http.Redirect(w, r, redirectURL, statusCode)
 		return
 	}
 
-	userFeedRows, err := s.queries.GetUserFeeds(ctx, currUser.ID)
-	if errors.Is(err, sql.ErrNoRows) {
-		statusCode = http.StatusNoContent
-	} else if err != nil {
-		statusCode = http.StatusInternalServerError
-		errMsg = "internal server error"
-	} else {
-		statusCode = http.StatusOK
-		for _, row := range userFeedRows {
-			currUserFeeds = append(currUserFeeds, toFeedItem(row))
+	if userCtx.CurrUser == nil {
+		s.respondWithHTML(w, templateName, feedPageData{userContext: userCtx}, http.StatusOK)
+		return
+	}
+
+	currUserFeeds, err = s.getCurrUserFeeds(ctx, userCtx.CurrUser.ID)
+	if err != nil {
+		switch {
+		case errors.Is(err, errNoFeeds):
+			statusCode = http.StatusNoContent
+		case errors.Is(err, errInternalFeeds):
+			statusCode = http.StatusInternalServerError
+			errMsg = "internal server error"
 		}
 	}
 
 	prevOffset, currOffset, nextOffset := s.resolveOffsets(r)
-
-	params := database.GetPostsForUserParams{
-		UserID: currUser.ID,
-		Offset: int32(currOffset),
-	}
-
-	userPostRows, err := s.queries.GetPostsForUser(ctx, params)
-	if errors.Is(err, sql.ErrNoRows) {
-		statusCode = http.StatusNoContent
-	} else if err != nil {
-		statusCode = http.StatusInternalServerError
-		errMsg = "internal server error"
-	} else {
-		statusCode = http.StatusOK
-		for _, row := range userPostRows {
-			currUserPosts = append(currUserPosts, toPostItem(row))
-		}
-	}
-
-	hasNextPage := len(currUserPosts) == 50
+	hasNextPage := len(currUserFeeds) == 50
 
 	s.respondWithHTML(w, templateName, feedPageData{
-		Users:         users,
-		CurrUser:      toUserItem(currUser),
-		CurrUserFeeds: currUserFeeds,
-		CurrUserPosts: currUserPosts,
-		CurrOffset:    int32(currOffset),
-		PrevOffset:    int32(prevOffset),
-		NextOffset:    int32(nextOffset),
-		HasNextPage:   hasNextPage,
-		ErrorString:   errMsg,
+		userContext: userCtx,
+		navigationContext: navigationContext{
+			PrevOffset:  int32(prevOffset),
+			CurrOffset:  int32(currOffset),
+			NextOffset:  int32(nextOffset),
+			HasNextPage: hasNextPage,
+		},
+		Feeds:       currUserFeeds,
+		ErrorString: errMsg,
 	}, statusCode)
 }
 
@@ -254,8 +179,8 @@ func (s *Server) handleAddFeed(w http.ResponseWriter, r *http.Request) {
 	statusCode = http.StatusSeeOther
 
 	r.Body = http.MaxBytesReader(w, r.Body, 1024*1024)
-	feedTitle := r.FormValue("feed-title")
-	feedURL := r.FormValue("feed-url")
+	feedTitle := r.FormValue("feed_title")
+	feedURL := r.FormValue("feed_url")
 	formDescription := strings.TrimSpace(r.FormValue("feed-description"))
 	feedDescription := sql.NullString{
 		String: formDescription,
@@ -303,7 +228,7 @@ func (s *Server) handleAddFeed(w http.ResponseWriter, r *http.Request) {
 
 	_, currOffset, _ := s.resolveOffsets(r)
 
-	redirectURL := fmt.Sprintf("/feeds?user-id=%s&%s", feedsUsersRow.UserID.String(), strconv.Itoa(currOffset))
+	redirectURL := fmt.Sprintf("/feeds?user_id=%s&%s", feedsUsersRow.UserID.String(), strconv.Itoa(currOffset))
 	http.Redirect(w, r, redirectURL, statusCode)
 }
 
@@ -319,9 +244,9 @@ func (s *Server) handlerDeleteFeed(w http.ResponseWriter, r *http.Request) {
 	var statusCode int
 	statusCode = http.StatusSeeOther
 	r.Body = http.MaxBytesReader(w, r.Body, 1024*1024)
-	feedTitle := r.FormValue("feed-title")
-	feedURL := r.FormValue("feed-url")
-	currUser := r.FormValue("user-id")
+	feedTitle := r.FormValue("feed_title")
+	feedURL := r.FormValue("feed_url")
+	currUser := r.FormValue("user_id")
 	feedID, err := s.queries.GetFeedByUrl(ctx, feedURL)
 	if errors.Is(err, sql.ErrNoRows) {
 		statusCode = http.StatusBadRequest
@@ -346,7 +271,7 @@ func (s *Server) handlerDeleteFeed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	log.Printf("Successfully deleted feed: %s (%s)", deletedFeed.Title, deletedFeed.Url)
-	redirectURL := fmt.Sprintf("/feeds?user-id=%s", currUser)
+	redirectURL := fmt.Sprintf("/feeds?user_id=%s", currUser)
 	http.Redirect(w, r, redirectURL, statusCode)
 }
 
@@ -358,8 +283,8 @@ func (s *Server) handleUnsubscribeUserFromFeed(w http.ResponseWriter, r *http.Re
 	var statusCode int
 	statusCode = http.StatusSeeOther
 	r.Body = http.MaxBytesReader(w, r.Body, 1024*1024)
-	feedTitle := r.FormValue("feed-title")
-	feedURL := r.FormValue("feed-url")
+	feedTitle := r.FormValue("feed_title")
+	feedURL := r.FormValue("feed_url")
 
 	currUserUUID, _, err := s.resolveCurrentUser(r)
 	if err != nil {
@@ -403,7 +328,7 @@ func (s *Server) handleUnsubscribeUserFromFeed(w http.ResponseWriter, r *http.Re
 	_, currOffsetInt, _ := s.resolveOffsets(r)
 
 	log.Printf("Successfully unsubscribed user %s from feed: %s (%s)", currUserUUID.UUID.String(), feedTitle, feedURL)
-	redirectURL := fmt.Sprintf("/feeds?user-id=%s&offset=%s", currUserUUID.UUID.String(), strconv.Itoa(currOffsetInt))
+	redirectURL := fmt.Sprintf("/feeds?user_id=%s&offset=%s", currUserUUID.UUID.String(), strconv.Itoa(currOffsetInt))
 	http.Redirect(w, r, redirectURL, statusCode)
 }
 
@@ -424,6 +349,104 @@ func (s *Server) subscribeUserToFeed(ctx context.Context, r *http.Request, feedI
 	}
 
 	return feedUserRow, nil
+}
+
+func (s *Server) getCurrUserFeeds(ctx context.Context, currUser uuid.UUID) ([]*feedItem, error) {
+	var feeds []*feedItem
+
+	feedRows, err := s.queries.GetDistinctFeedsForUser(ctx, currUser)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, errNoFeeds
+	} else if err != nil {
+		return nil, errInternalFeeds
+	} else {
+		for _, row := range feedRows {
+			feeds = append(feeds, toFeedItem(row))
+		}
+	}
+
+	return feeds, nil
+}
+
+func (s *Server) handleGetPosts(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+
+	var statusCode int
+	var currUserPosts []*postItem
+	var availableFeeds []*feedItem
+	var errMsg string
+	templateName := getTemplateName(r, "posts.html", "postContent")
+
+	userCtx, fromCookie, err := s.getUserContext(r, w)
+	if err != nil {
+		switch {
+		case errors.Is(err, errNoUser):
+			s.respondWithHTML(w, templateName, postPageData{userContext: userCtx}, http.StatusOK)
+		case errors.Is(err, errInvalidUser):
+			s.respondWithHTML(w, templateName, postPageData{userContext: userCtx, ErrorString: "invalid user"}, http.StatusBadRequest)
+		case errors.Is(err, errInternalUser):
+			s.respondWithHTML(w, templateName, postPageData{userContext: userCtx, ErrorString: "internal server error"}, http.StatusInternalServerError)
+		}
+		return
+	}
+
+	if fromCookie {
+		statusCode = http.StatusSeeOther
+		redirectURL := fmt.Sprintf("/posts?user_id=%s", userCtx.CurrUser.ID.String())
+		http.Redirect(w, r, redirectURL, statusCode)
+		return
+	}
+
+	if userCtx.CurrUser == nil {
+		s.respondWithHTML(w, templateName, postPageData{userContext: userCtx}, http.StatusOK)
+		return
+	}
+
+	prevOffset, currOffset, nextOffset := s.resolveOffsets(r)
+
+	params := database.GetPostsForUserParams{
+		UserID: userCtx.CurrUser.ID,
+		Offset: int32(currOffset),
+	}
+	userPostRows, err := s.queries.GetPostsForUser(ctx, params)
+	if errors.Is(err, sql.ErrNoRows) {
+		statusCode = http.StatusNoContent
+	} else if err != nil {
+		statusCode = http.StatusInternalServerError
+		errMsg = "internal server error"
+	} else {
+		statusCode = http.StatusOK
+		for _, row := range userPostRows {
+			currUserPosts = append(currUserPosts, toPostItem(row))
+		}
+	}
+
+	availableFeeds, err = s.getCurrUserFeeds(ctx, userCtx.CurrUser.ID)
+	if err != nil {
+		switch {
+		case errors.Is(err, errNoFeeds):
+			statusCode = http.StatusNoContent
+		case errors.Is(err, errInternalFeeds):
+			statusCode = http.StatusInternalServerError
+			errMsg = "internal server error"
+		}
+	}
+
+	hasNextPage := len(currUserPosts) == 50
+	s.respondWithHTML(w, templateName, postPageData{
+		userContext: userCtx,
+		navigationContext: navigationContext{
+			PrevOffset:  int32(prevOffset),
+			CurrOffset:  int32(currOffset),
+			NextOffset:  int32(nextOffset),
+			HasNextPage: hasNextPage,
+		},
+		Posts:       currUserPosts,
+		Feeds:       availableFeeds,
+		ErrorString: errMsg,
+	}, statusCode,
+	)
 }
 
 func (s *Server) resolveOffsets(r *http.Request) (prevOffset int, currOffset int, nextOffset int) {
@@ -453,24 +476,78 @@ func (s *Server) resolveOffsets(r *http.Request) (prevOffset int, currOffset int
 	return prevOffset, currOffset, nextOffset
 }
 
+func (s *Server) getUserContext(r *http.Request, w http.ResponseWriter) (userData userContext, fromCookie bool, err error) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+
+	var users []*userItem
+
+	usersRows, err := s.queries.GetUsers(ctx)
+	if errors.Is(err, sql.ErrNoRows) {
+	} else if err != nil {
+		return userContext{}, false, errNoUser
+	} else {
+		for _, row := range usersRows {
+			users = append(users, toUserItem(row))
+		}
+	}
+
+	userUUID, fromCookie, err := s.resolveCurrentUser(r)
+	if err != nil {
+		// Can't parse UUID so we exit early
+		return userContext{Users: users, CurrUser: nil}, false, errInvalidUser
+	}
+
+	// Exit early as we don't have a user and don't need to request the rest of the data
+	if !userUUID.Valid {
+		http.SetCookie(w, &http.Cookie{
+			Name:   "user_id",
+			Value:  "",
+			Path:   "/",
+			MaxAge: -1,
+		})
+
+		return userContext{Users: users, CurrUser: nil}, false, nil
+	}
+
+	currUser, err := s.queries.GetUserById(ctx, userUUID.UUID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return userContext{Users: users, CurrUser: nil}, false, errInvalidUser
+	} else if err != nil {
+		return userContext{Users: users, CurrUser: nil}, false, errInternalUser
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:  "user_id",
+		Value: currUser.ID.String(),
+		Path:  "/",
+	})
+
+	if fromCookie {
+		return userContext{Users: users, CurrUser: toUserItem(currUser)}, true, nil
+	}
+
+	return userContext{Users: users, CurrUser: toUserItem(currUser)}, false, nil
+}
+
 func (s *Server) resolveCurrentUser(r *http.Request) (userID uuid.NullUUID, fromCookie bool, err error) {
 	var userStr string
 
 	if r.Method == http.MethodPost || r.Method == http.MethodDelete {
-		userStr = r.FormValue("user-id")
+		userStr = r.FormValue("user_id")
 	} else {
-		userStr = r.URL.Query().Get("user-id")
+		userStr = r.URL.Query().Get("user_id")
 	}
 
 	// user explicitly deselected the user - skip checking cookie
-	_, keyPresent := r.URL.Query()["user-id"]
+	_, keyPresent := r.URL.Query()["user_id"]
 	if userStr == "" && keyPresent {
 		return uuid.NullUUID{Valid: false}, false, nil
 	}
 
 	var userCookie *http.Cookie
 	if userStr == "" {
-		userCookie, _ = r.Cookie("user-id")
+		userCookie, _ = r.Cookie("user_id")
 	}
 
 	if userStr == "" && userCookie == nil {
@@ -521,9 +598,9 @@ func respondWithJSON(w http.ResponseWriter, responseData any, statusCode int) {
 	}
 }
 
-func getTemplateName(r *http.Request, fullPage string) string {
+func getTemplateName(r *http.Request, fullPage string, partialPage string) string {
 	if r.Header.Get("HX-Request") == "true" {
-		return "content"
+		return partialPage
 	}
 	return fullPage
 }

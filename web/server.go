@@ -58,6 +58,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /feeds", s.handleGetFeeds)
 	s.mux.HandleFunc("POST /feeds", s.handleAddFeed)
 	s.mux.HandleFunc("POST /feeds/unsubscribe", s.handleUnsubscribeUserFromFeed)
+
+	s.mux.HandleFunc("GET /posts", s.handleGetPosts)
 }
 
 func (s *Server) uptime() string {

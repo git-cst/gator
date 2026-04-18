@@ -230,27 +230,28 @@ func (q *Queries) GetDistinctFeeds(ctx context.Context) ([]GetDistinctFeedsRow, 
 
 const getDistinctFeedsForUser = `-- name: GetDistinctFeedsForUser :many
 SELECT DISTINCT
+	f.id,
 	f.title,
 	f.description,
-	f.url
-FROM feeds_users fu
-LEFT JOIN feeds f
-ON fu.feed_id = f.id
-LEFT JOIN users u
-ON u .user_id = u.id
+	f.url,
+	fu.user_id
+FROM feeds f
+LEFT JOIN feeds_users fu
+ON fu.feed_id = f.id AND fu.user_id = $1
 
-WHERE u.id = $1
 ORDER BY title DESC
 `
 
 type GetDistinctFeedsForUserRow struct {
-	Title       sql.NullString
+	ID          uuid.UUID
+	Title       string
 	Description sql.NullString
-	Url         sql.NullString
+	Url         string
+	UserID      uuid.NullUUID
 }
 
-func (q *Queries) GetDistinctFeedsForUser(ctx context.Context, id uuid.UUID) ([]GetDistinctFeedsForUserRow, error) {
-	rows, err := q.db.QueryContext(ctx, getDistinctFeedsForUser, id)
+func (q *Queries) GetDistinctFeedsForUser(ctx context.Context, userID uuid.UUID) ([]GetDistinctFeedsForUserRow, error) {
+	rows, err := q.db.QueryContext(ctx, getDistinctFeedsForUser, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -258,7 +259,13 @@ func (q *Queries) GetDistinctFeedsForUser(ctx context.Context, id uuid.UUID) ([]
 	var items []GetDistinctFeedsForUserRow
 	for rows.Next() {
 		var i GetDistinctFeedsForUserRow
-		if err := rows.Scan(&i.Title, &i.Description, &i.Url); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Description,
+			&i.Url,
+			&i.UserID,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

@@ -2,11 +2,12 @@ package web
 
 import "gator/database"
 
-func toFeedItem(row database.GetUserFeedsRow) *feedItem {
+func toFeedItem(row database.GetDistinctFeedsForUserRow) *feedItem {
 	return &feedItem{
-		ID:    row.ID.UUID,
-		Title: row.Title.String,
-		URL:   row.Url.String,
+		ID:         row.ID,
+		Title:      row.Title,
+		URL:        row.Url,
+		Subscribed: row.UserID.Valid,
 	}
 }
 

@@ -4,11 +4,16 @@ import (
 	"database/sql"
 	"fmt"
 
+	"gator/config"
+
 	_ "github.com/lib/pq"
 	"github.com/pressly/goose/v3"
 )
 
-func RunMigrations(migrationDir string, dbDriver string, db *sql.DB) error {
+func RunMigrations(dbConfig *config.DBConfig, db *sql.DB) error {
+	dbDriver := dbConfig.DBDriver
+	migrationDir := dbConfig.MigrationDir
+
 	if err := goose.SetDialect(dbDriver); err != nil {
 		return fmt.Errorf("setting goose dialect: %w", err)
 	}

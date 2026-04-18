@@ -217,7 +217,20 @@ func (s *Server) handleAddFeed(w http.ResponseWriter, r *http.Request) {
 		feedID = feedRow.ID
 	}
 
-	feedsUsersRow, err := s.subscribeUserToFeed(ctx, r, feedID)
+	userCtx, _, err := s.getUserContext(r, w)
+	if err != nil {
+		switch {
+		case errors.Is(err, errNoUser):
+			s.respondWithHTML(w, "error", errorData{ErrorString: "no user provided"}, http.StatusBadRequest)
+		case errors.Is(err, errInvalidUser):
+			s.respondWithHTML(w, "error", errorData{ErrorString: "invalid user"}, http.StatusBadRequest)
+		case errors.Is(err, errInternalUser):
+			s.respondWithHTML(w, "error", errorData{ErrorString: "internal server error"}, http.StatusInternalServerError)
+		}
+		return
+	}
+
+	feedsUsersRow, err := s.subscribeUserToFeed(ctx, userCtx.CurrUser.ID, feedID)
 	if err != nil {
 		statusCode = http.StatusInternalServerError
 		errMsg := fmt.Sprintf("Failed to subscribe to %s (%s) due to unexpected error", feedTitle, feedURL)
@@ -228,7 +241,7 @@ func (s *Server) handleAddFeed(w http.ResponseWriter, r *http.Request) {
 
 	_, currOffset, _ := s.resolveOffsets(r)
 
-	redirectURL := fmt.Sprintf("/feeds?user_id=%s&%s", feedsUsersRow.UserID.String(), strconv.Itoa(currOffset))
+	redirectURL := fmt.Sprintf("/feeds?user_id=%s&offset=%s", feedsUsersRow.UserID.String(), strconv.Itoa(currOffset))
 	http.Redirect(w, r, redirectURL, statusCode)
 }
 
@@ -328,20 +341,79 @@ func (s *Server) handleUnsubscribeUserFromFeed(w http.ResponseWriter, r *http.Re
 	_, currOffsetInt, _ := s.resolveOffsets(r)
 
 	log.Printf("Successfully unsubscribed user %s from feed: %s (%s)", currUserUUID.UUID.String(), feedTitle, feedURL)
+
+	if r.Header.Get("HX-Request") == "true" {
+		s.respondWithHTML(w, "feedItem", feedItem{ID: feed.ID, Title: feed.Title, URL: feed.Url, Subscribed: false}, http.StatusOK)
+		return
+	}
+
 	redirectURL := fmt.Sprintf("/feeds?user_id=%s&offset=%s", currUserUUID.UUID.String(), strconv.Itoa(currOffsetInt))
 	http.Redirect(w, r, redirectURL, statusCode)
 }
 
-func (s *Server) subscribeUserToFeed(ctx context.Context, r *http.Request, feedID uuid.UUID) (database.FeedsUser, error) {
-	userUUID, _, err := s.resolveCurrentUser(r)
+func (s *Server) handleSubscribeUserToFeed(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	defer r.Body.Close()
+
+	var statusCode int
+	statusCode = http.StatusSeeOther
+	r.Body = http.MaxBytesReader(w, r.Body, 1024*1024)
+	feedTitle := r.FormValue("feed_title")
+	feedURL := r.FormValue("feed_url")
+
+	currUserUUID, _, err := s.resolveCurrentUser(r)
 	if err != nil {
-		return database.FeedsUser{}, err
+		// Can't parse UUID so we exit early
+		statusCode = http.StatusBadRequest
+		errMsg := "invalid user"
+		log.Printf("Failed to parse string to UUID whilst unsubbing from %s (%s), error: %v", feedTitle, feedURL, err)
+		s.respondWithHTML(w, "error", errorData{ErrorString: errMsg}, statusCode)
+		return
 	}
 
+	feed, err := s.queries.GetFeedByUrl(ctx, feedURL)
+	if errors.Is(err, sql.ErrNoRows) {
+		statusCode = http.StatusBadRequest
+		errMsg := fmt.Sprintf("Feed: %s (%s) not found.", feedTitle, feedURL)
+		log.Printf("Failed to retrieve %s (%s), error: %v", feedTitle, feedURL, err)
+		s.respondWithHTML(w, "error", errorData{ErrorString: errMsg}, statusCode)
+		return
+	} else if err != nil {
+		statusCode = http.StatusInternalServerError
+		errMsg := fmt.Sprintf("Unexpected error whilst subscribing to %s (%s)", feedTitle, feedURL)
+		log.Printf("Failed to retrieve %s (%s), error: %v", feedTitle, feedURL, err)
+		s.respondWithHTML(w, "error", errorData{ErrorString: errMsg}, statusCode)
+		return
+	}
+
+	_, err = s.subscribeUserToFeed(ctx, currUserUUID.UUID, feed.ID)
+	if err != nil {
+		statusCode = http.StatusInternalServerError
+		errMsg := fmt.Sprintf("Unexpected error whilst subscribing to %s (%s)", feedTitle, feedURL)
+		log.Printf("Failed to add %s (%s) for user (%s), error: %v", feedTitle, feedURL, currUserUUID.UUID.String(), err)
+		s.respondWithHTML(w, "error", errorData{ErrorString: errMsg}, statusCode)
+		return
+	}
+
+	log.Printf("Successfully subscribed user (%s) to %s (%s)", currUserUUID.UUID.String(), feedTitle, feedURL)
+
+	_, currOffsetInt, _ := s.resolveOffsets(r)
+
+	if r.Header.Get("HX-Request") == "true" {
+		s.respondWithHTML(w, "feedItem", feedItem{ID: feed.ID, Title: feed.Title, URL: feed.Url, Subscribed: true}, http.StatusOK)
+		return
+	}
+
+	redirectURL := fmt.Sprintf("/feeds?user_id=%s&offset=%s", currUserUUID.UUID.String(), strconv.Itoa(currOffsetInt))
+	http.Redirect(w, r, redirectURL, statusCode)
+}
+
+func (s *Server) subscribeUserToFeed(ctx context.Context, userID uuid.UUID, feedID uuid.UUID) (database.FeedsUser, error) {
 	addFeedParams := database.AddFeedForUserParams{
 		ID:     uuid.New(),
 		FeedID: feedID,
-		UserID: userUUID.UUID,
+		UserID: userID,
 	}
 	feedUserRow, err := s.queries.AddFeedForUser(ctx, addFeedParams)
 	if err != nil {

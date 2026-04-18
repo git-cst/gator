@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"gator/config"
 	"gator/database"
 
 	"github.com/google/uuid"
@@ -25,11 +26,11 @@ type FeedService struct {
 	maxConcurrency uint8
 }
 
-func NewService(queries *database.Queries, httpClient *http.Client, maxConcurrency uint8) *FeedService {
+func NewService(queries *database.Queries, httpConfig *config.HTTPConfig, serviceConfig *config.ServiceConfig) *FeedService {
 	return &FeedService{
 		queries:        queries,
-		httpClient:     httpClient,
-		maxConcurrency: maxConcurrency,
+		httpClient:     httpConfig.HTTPClient,
+		maxConcurrency: serviceConfig.MaxConcurrency,
 	}
 }
 

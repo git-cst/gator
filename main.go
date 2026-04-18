@@ -96,12 +96,12 @@ func main() {
 	}
 
 	// Ensure DB is up-to-date
-	if err := database.RunMigrations(config.MigrationDir, config.DBDriver, db); err != nil {
+	if err := database.RunMigrations(dbConfig, db); err != nil {
 		log.Fatalf("migrations failed: %v", err)
 	}
 
 	queries := database.New(db)
-	feedService := feedservice.NewService(queries, config.HTTPClient, config.MaxConcurrency)
+	feedService := feedservice.NewService(queries, config.HTTPConfig, config.ServiceConfig)
 
 	var wg sync.WaitGroup
 
@@ -112,7 +112,7 @@ func main() {
 	})
 
 	// Start web server
-	srv, err := web.NewServer(queries, config.TemplateDir, config.ServerPort)
+	srv, err := web.NewServer(queries, config.ServiceConfig)
 	if err != nil {
 		log.Fatalf("Failed to create new server: %v", err)
 	}
@@ -123,7 +123,7 @@ func main() {
 		}
 	}()
 
-	log.Printf("Server up and running on port: %s", config.ServerPort)
+	log.Printf("Server up and running on port: %s", config.ServiceConfig.ServerPort)
 	// Block until we're done
 	<-ctx.Done()
 	fmt.Println("Shutting down...")

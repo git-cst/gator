@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"gator/config"
 	"gator/database"
 )
 
@@ -19,8 +20,8 @@ type Server struct {
 	startTime time.Time
 }
 
-func NewServer(queries *database.Queries, templateDir string, srvPort string) (*Server, error) {
-	globPattern := filepath.Join(templateDir, "*.html")
+func NewServer(queries *database.Queries, serviceConfig *config.ServiceConfig) (*Server, error) {
+	globPattern := filepath.Join(serviceConfig.TemplateDir, "*.html")
 	parsedTemplate, err := template.ParseGlob(globPattern)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse template files with pattern %q: %w", globPattern, err)
@@ -28,7 +29,7 @@ func NewServer(queries *database.Queries, templateDir string, srvPort string) (*
 
 	mux := http.NewServeMux()
 	srv := http.Server{
-		Addr:    srvPort,
+		Addr:    serviceConfig.ServerPort,
 		Handler: mux,
 	}
 
@@ -55,9 +56,11 @@ func (s *Server) Shutdown(ctx context.Context) error {
 
 func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /health", s.handleHealth)
+
 	s.mux.HandleFunc("GET /feeds", s.handleGetFeeds)
 	s.mux.HandleFunc("POST /feeds", s.handleAddFeed)
 	s.mux.HandleFunc("POST /feeds/unsubscribe", s.handleUnsubscribeUserFromFeed)
+	s.mux.HandleFunc("POST /feeds/subscribe", s.handleSubscribeUserToFeed)
 
 	s.mux.HandleFunc("GET /posts", s.handleGetPosts)
 }

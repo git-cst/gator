@@ -10,23 +10,28 @@ import (
 	"time"
 )
 
-type Config struct {
-	// Database related configuration
+type DBConfig struct {
 	DBURL          string
 	DBDriver       string
 	MigrationDir   string
 	DBConnAttempts uint8
 	DBConnWait     time.Duration
+}
 
-	// HTTP related configuration
+type HTTPConfig struct {
 	HTTPClient *http.Client
+}
 
-	// FeedService related configuration
+type ServiceConfig struct {
 	MaxConcurrency uint8
+	TemplateDir    string
+	ServerPort     string
+}
 
-	// Server related configuration
-	TemplateDir string
-	ServerPort  string
+type Config struct {
+	DBConfig      *DBConfig
+	HTTPConfig    *HTTPConfig
+	ServiceConfig *ServiceConfig
 }
 
 var validDialects = map[string]bool{
@@ -108,19 +113,24 @@ func LoadConfig() (Config, error) {
 	}
 
 	return Config{
-		DBURL:          dbURL,
-		DBDriver:       dbDriver,
-		MigrationDir:   migrationDir,
-		DBConnAttempts: uint8(dbConnAttemptsInt),
-		DBConnWait:     time.Duration(dbConnWaitInt) * time.Second,
-
-		HTTPClient: &http.Client{
-			Timeout: 30 * time.Second,
+		DBConfig: &DBConfig{
+			DBURL:          dbURL,
+			DBDriver:       dbDriver,
+			MigrationDir:   migrationDir,
+			DBConnAttempts: uint8(dbConnAttemptsInt),
+			DBConnWait:     time.Duration(dbConnWaitInt) * time.Second,
 		},
 
-		MaxConcurrency: uint8(maxConcInt),
+		HTTPConfig: &HTTPConfig{
+			HTTPClient: &http.Client{
+				Timeout: 30 * time.Second,
+			},
+		},
 
-		TemplateDir: templateDir,
-		ServerPort:  serverPort,
+		ServiceConfig: &ServiceConfig{
+			MaxConcurrency: uint8(maxConcInt),
+			TemplateDir:    templateDir,
+			ServerPort:     serverPort,
+		},
 	}, nil
 }

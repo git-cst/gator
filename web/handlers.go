@@ -112,6 +112,14 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, response, statusCode)
 }
 
+func (s *Server) handleNotFound(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		s.respondWithHTML(w, "index.html", nil, http.StatusNotFound)
+		return
+	}
+	s.respondWithHTML(w, "index.html", nil, http.StatusOK)
+}
+
 func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()

@@ -171,7 +171,7 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 		Feeds:         currUserFeeds,
 		UserSwitchURL: "/feeds",
 		ErrorString:   errMsg,
-	}, statusCode)
+	}, http.StatusOK)
 }
 
 func (s *Server) handleAddFeed(w http.ResponseWriter, r *http.Request) {

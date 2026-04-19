@@ -41,10 +41,16 @@
 
 {{ define "feedContent" }}
 {{ template "error" . }}
+<div id="feed-list-title" class="h1">
+  Feeds
+</div>
 <div id="feed-list">
   {{ range .Feeds }}
   {{ template "feedItem" . }}
   {{ end }}
 </div>
 {{ template "paginationButtons" . }}
+{{ end }}
+{{ end }}
+</div>
 {{ end }}

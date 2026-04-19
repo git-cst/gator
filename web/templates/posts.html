@@ -19,6 +19,9 @@
 
 {{ define "postContent" }}
 {{ template "error" . }}
+<div id="post-list-title" class="h1">
+	Posts
+</div>
 <div id="post-list">
 	{{ range .Posts }}
 	{{ template "postItem" . }}

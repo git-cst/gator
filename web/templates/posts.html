@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+	<meta charset="UTF-8" />
+	<title>Gator - Posts</title>
+	<script src="https://unpkg.com/htmx.org@1.9.10"></script>
+</head>
+
+<body>
+	{{ template "userSelector" . }}
+	<a href="/feeds">Feeds</a>
+	<div id="main-content">
+		{{ template "postContent" . }}
+	</div>
+</body>
+
+</html>
+
+{{ define "postContent" }}
+{{ template "error" . }}
+<div id="post-list">
+	{{ range .Posts }}
+	{{ template "postItem" . }}
+	{{ end }}
+</div>
+{{ template "paginationButtons" . }}
+{{ end }}

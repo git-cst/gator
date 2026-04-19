@@ -40,6 +40,15 @@ type Post struct {
 	UpdatedAt   time.Time
 }
 
+type PostsUser struct {
+	ID        uuid.UUID
+	PostID    uuid.UUID
+	UserID    uuid.UUID
+	IsRead    bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 type User struct {
 	ID        uuid.UUID
 	Name      string

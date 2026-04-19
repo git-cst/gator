@@ -3,86 +3,48 @@
 
 <head>
   <meta charset="UTF-8" />
-  <title>Gator</title>
+  <title>Gator - Feeds</title>
   <script src="https://unpkg.com/htmx.org@1.9.10"></script>
 </head>
 
 <body>
-  <select hx-get="/feeds" hx-target="#main-content" hx-swap="innerHTML" name="user_id">
-    <option value="">Select a user...</option>
-    {{ range .Users }}
-    <option value="{{ .ID }}" {{ if $.CurrUser }}{{ if eq $.CurrUser.ID .ID }}selected{{ end }}{{ end }}>
-      {{ .Username }}
-    </option>
-    {{ end }}
-  </select>
+  {{ template "userSelector" . }}
+  <a href="/posts">Posts</a>
+  <button onclick="document.getElementById('add-feed-dialog').showModal()">
+    Add Feed
+  </button>
+
+  <dialog id="add-feed-dialog">
+    <form hx-post="/feeds" hx-target="#feed-list" hx-swap="innerHTML"
+      hx-on::after-settle="document.getElementById('add-feed-dialog').close()">
+      {{ if .CurrUser }}
+      <input type="hidden" name="user_id" value="{{ .CurrUser.ID }}" />
+      {{ end }}
+      <input type="text" name="feed_title" placeholder="Title" />
+      <input type="text" name="feed_url" placeholder="URL" />
+      <input type="text" name="feed_description" placeholder="Description (optional)" />
+      <button type="submit">Add</button>
+      <button type="button" onclick="document.getElementById('add-feed-dialog').close()">
+        Cancel
+      </button>
+    </form>
+  </dialog>
 
   <div id="main-content">
-    {{ template "content" . }}
+    {{ template "feedContent" . }}
   </div>
+
+
 </body>
 
 </html>
 
-{{ define "content" }}
-<form hx-post="/feeds" hx-target="#main-content" hx-swap="innerHTML">
-  {{ if .CurrUser }}
-  <input type="hidden" name="user_id" value="{{ .CurrUser.ID }}" />
-  {{ end }}
-  <input type="text" name="feed_title" placeholder="Title" />
-  <input type="text" name="feed_url" placeholder="URL" />
-  <input type="text" name="feed_description" placeholder="Description (optional)" />
-  <button type="submit">Add feed</button>
-</form>
-
+{{ define "feedContent" }}
+{{ template "error" . }}
 <div id="feed-list">
-  {{ if .CurrUser }}
-  <div id="feed-list-title" class="h1">
-    Subscribed Feeds
-  </div>
-  {{ range .CurrUserFeeds }}
-  <article class="feed-item">
-    <span class="feed-container">
-      <a href="{{ .URL }}">{{ .Title }}</a>
-      <form hx-post="/feeds/unsubscribe" hx-target="#main-content" hx-swap="innerHTML">
-        <input type="hidden" name="feed_title" value="{{ .Title }}">
-        <input type="hidden" name="feed_url" value="{{ .URL }}">
-        <input type="hidden" name="user_id" value="{{ $.CurrUser.ID }}">
-        <input type="hidden" name="curr_offset" value="{{ $.CurrOffset }}">
-        <button type="submit">Unsubscribe</button>
-      </form>
-    </span>
-  </article>
-  {{ end }}
+  {{ range .Feeds }}
+  {{ template "feedItem" . }}
   {{ end }}
 </div>
-
-<div id="post-list">
-  {{ if .CurrUser }}
-  <div id="post-list-title" class="h1">
-    Posts
-  </div>
-  {{ end }}
-  {{ range .CurrUserPosts }}
-  <article class="post-item">
-    <a href="{{ .URL }}">{{ .Title }}</a>
-    <time>{{ .PublishedAt }}</time>
-  </article>
-  {{ end }}
-</div>
-
-<div id="button-container">
-  {{ if .CurrUser }}
-  <button hx-get="/feeds" hx-target="#main-content"
-    hx-vals='{"user_id": "{{ .CurrUser.ID }}", "offset": "{{ .PrevOffset }}"}' {{ if eq .CurrOffset 0 }}disabled{{ end
-    }}>
-    Previous
-  </button>
-  <button hx-get="/feeds" hx-target="#main-content"
-    hx-vals='{"user_id": "{{ .CurrUser.ID }}", "offset": "{{ .NextOffset }}"}' {{ if not .HasNextPage }}disabled{{ end
-    }}>
-    Next
-  </button>
-  {{ end }}
-</div>
+{{ template "paginationButtons" . }}
 {{ end }}

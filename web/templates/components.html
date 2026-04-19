@@ -4,16 +4,53 @@
 {{ end }}
 {{ end }}
 
+{{ define "userSelector" }}
+<select hx-get="{{ .UserSwitchURL }}" hx-target="#main-content" hx-swap="innerHTML" name="user_id">
+	<option value="">Select a user...</option>
+	{{ range .Users }}
+	<option value="{{ .ID }}" {{ if $.CurrUser }}{{ if eq $.CurrUser.ID .ID }}selected{{ end }}{{ end }}>
+		{{ .Username }}
+	</option>
+	{{ end }}
+</select>
+{{ end }}
+
 {{ define "feedItem" }}
 <article id="feed-{{ .ID }}" class="feed-item">
 	<span class="feed-container">
 		<a href="{{ .URL }}">{{ .Title }}</a>
 		<input type="checkbox"
-			hx-post="{{ if .Subscribed }}/feeds/unsubscribe{{ else }}/feeds/subscribe{{ end }}"
-			hx-target="#feed-{{ .ID }}" hx-swap="outerHTML" hx-include="closest article" hx-trigger="change"
-			{{ if .Subscribed }}checked{{ end }}>
+			hx-post="{{ if .Subscribed }}/feeds/{{ .ID }}/unsubscribe{{ else }}/feeds/{{ .ID }}/subscribe{{ end }}"
+			hx-target="#feed-{{ .ID }}" hx-swap="outerHTML" hx-trigger="change" {{ if .Subscribed
+			}}checked{{ end }}>
 	</span>
 </article>
+{{ end }}
+
+{{ define "postItem" }}
+<article id="post-{{ .ID }}" class="post-item">
+	<a href="{{ .URL }}">{{ .Title }}</a>
+	<time>{{ .PublishedAt }}</time>
+	<input type="checkbox" hx-post="/posts/{{ .ID }}/toggle_read" hx-target="#post-{{ .ID }}" hx-swap="outerHTML"
+		hx-trigger="change" {{ if .IsRead }}checked{{ end }}>
+</article>
+{{ end }}
+
+{{ define "paginationButtons" }}
+<div id="button-container">
+	{{ if .CurrUser }}
+	<button hx-get="{{ .UserSwitchURL }}" hx-target="#main-content"
+		hx-vals='{"user_id": "{{ .CurrUser.ID }}", "offset": "{{ .PrevOffset }}"}' {{ if eq .CurrOffset 0
+		}}disabled{{ end }}>
+		Previous
+	</button>
+	<button hx-get="{{ .UserSwitchURL }}" hx-target="#main-content"
+		hx-vals='{"user_id": "{{ .CurrUser.ID }}", "offset": "{{ .NextOffset }}"}' {{ if not .HasNextPage
+		}}disabled{{ end }}>
+		Next
+	</button>
+	{{ end }}
+</div>
 {{ end }}
 
 {{ define "error" }}

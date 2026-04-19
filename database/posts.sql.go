@@ -15,25 +15,9 @@ import (
 
 const createPost = `-- name: CreatePost :one
 INSERT INTO posts(
-	id,
-	created_at,
-	updated_at,
-	title,
-	url,
-	description,
-	published_at,
-	feed_id
+	id, created_at,	updated_at, title, url, description, published_at, feed_id
 )
-VALUES (
-    $1,
-    $2,
-    $3,
-    $4,
-    $5,
-    $6,
-    $7,
-    $8
-)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING id, feed_id, title, url, description, published_at, created_at, updated_at
 `
 
@@ -73,17 +57,68 @@ func (q *Queries) CreatePost(ctx context.Context, arg CreatePostParams) (Post, e
 	return i, err
 }
 
+const getPostByID = `-- name: GetPostByID :one
+SELECT
+	p.id,
+	p.title,
+	p.url,
+	p.description,
+	pu.is_read,
+	p.published_at
+FROM posts as p
+
+LEFT JOIN feeds_users fu
+ON p.feed_id = fu.feed_id
+
+LEFT JOIN posts_users pu
+ON p.id = pu.post_id AND pu.user_id = $1
+
+WHERE p.id = $2
+`
+
+type GetPostByIDParams struct {
+	UserID uuid.UUID
+	ID     uuid.UUID
+}
+
+type GetPostByIDRow struct {
+	ID          uuid.UUID
+	Title       string
+	Url         string
+	Description sql.NullString
+	IsRead      sql.NullBool
+	PublishedAt time.Time
+}
+
+func (q *Queries) GetPostByID(ctx context.Context, arg GetPostByIDParams) (GetPostByIDRow, error) {
+	row := q.db.QueryRowContext(ctx, getPostByID, arg.UserID, arg.ID)
+	var i GetPostByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Url,
+		&i.Description,
+		&i.IsRead,
+		&i.PublishedAt,
+	)
+	return i, err
+}
+
 const getPostsForUser = `-- name: GetPostsForUser :many
 SELECT
 	p.id,
 	p.title,
 	p.url,
 	p.description,
+	pu.is_read,
 	p.published_at
 FROM posts as p
 
 LEFT JOIN feeds_users fu
 ON p.feed_id = fu.feed_id
+
+LEFT JOIN posts_users pu
+ON p.id = pu.post_id AND pu.user_id = $1
 
 WHERE fu.user_id = $1
 
@@ -102,6 +137,7 @@ type GetPostsForUserRow struct {
 	Title       string
 	Url         string
 	Description sql.NullString
+	IsRead      sql.NullBool
 	PublishedAt time.Time
 }
 
@@ -119,6 +155,7 @@ func (q *Queries) GetPostsForUser(ctx context.Context, arg GetPostsForUserParams
 			&i.Title,
 			&i.Url,
 			&i.Description,
+			&i.IsRead,
 			&i.PublishedAt,
 		); err != nil {
 			return nil, err
@@ -132,4 +169,51 @@ func (q *Queries) GetPostsForUser(ctx context.Context, arg GetPostsForUserParams
 		return nil, err
 	}
 	return items, nil
+}
+
+const togglePostReadStatus = `-- name: TogglePostReadStatus :one
+INSERT INTO posts_users(
+	id,
+	post_id,
+	user_id,
+	is_read,
+	created_at,
+	updated_at
+)
+VALUES ($1, $2, $3, $4, $5, $6)
+
+ON CONFLICT (post_id, user_id) DO UPDATE SET
+	is_read = NOT posts_users.is_read,
+	updated_at = EXCLUDED.updated_at
+RETURNING id, post_id, user_id, is_read, created_at, updated_at
+`
+
+type TogglePostReadStatusParams struct {
+	ID        uuid.UUID
+	PostID    uuid.UUID
+	UserID    uuid.UUID
+	IsRead    bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+func (q *Queries) TogglePostReadStatus(ctx context.Context, arg TogglePostReadStatusParams) (PostsUser, error) {
+	row := q.db.QueryRowContext(ctx, togglePostReadStatus,
+		arg.ID,
+		arg.PostID,
+		arg.UserID,
+		arg.IsRead,
+		arg.CreatedAt,
+		arg.UpdatedAt,
+	)
+	var i PostsUser
+	err := row.Scan(
+		&i.ID,
+		&i.PostID,
+		&i.UserID,
+		&i.IsRead,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }

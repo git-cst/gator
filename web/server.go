@@ -59,10 +59,11 @@ func (s *Server) registerRoutes() {
 
 	s.mux.HandleFunc("GET /feeds", s.handleGetFeeds)
 	s.mux.HandleFunc("POST /feeds", s.handleAddFeed)
-	s.mux.HandleFunc("POST /feeds/unsubscribe", s.handleUnsubscribeUserFromFeed)
-	s.mux.HandleFunc("POST /feeds/subscribe", s.handleSubscribeUserToFeed)
+	s.mux.HandleFunc("POST /feeds/{id}/unsubscribe", s.handleUnsubscribeUserFromFeed)
+	s.mux.HandleFunc("POST /feeds/{id}/subscribe", s.handleSubscribeUserToFeed)
 
 	s.mux.HandleFunc("GET /posts", s.handleGetPosts)
+	s.mux.HandleFunc("POST /posts/{id}/toggle_read", s.handleTogglePostReadStatus)
 }
 
 func (s *Server) uptime() string {

@@ -17,11 +17,16 @@ func toPostItem(row database.GetPostsForUserRow) *postItem {
 		description = row.Description.String
 	}
 
+	if row.IsRead.Valid {
+		isRead = row.IsRead.Bool
+	}
+
 	return &postItem{
 		ID:          row.ID,
 		Title:       row.Title,
 		Description: description,
 		URL:         row.Url,
+		IsRead:      row.IsRead.Valid && row.IsRead.Bool,
 		PublishedAt: row.PublishedAt.Format("02-01-2006 15:04"),
 	}
 }

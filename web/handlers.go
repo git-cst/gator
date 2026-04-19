@@ -40,6 +40,7 @@ type postItem struct {
 	Title       string
 	Description string
 	URL         string
+	IsRead      bool
 	PublishedAt string
 }
 
@@ -63,16 +64,18 @@ type navigationContext struct {
 type feedPageData struct {
 	userContext
 	navigationContext
-	Feeds       []*feedItem
-	ErrorString string
+	Feeds         []*feedItem
+	UserSwitchURL string
+	ErrorString   string
 }
 
 type postPageData struct {
 	userContext
 	navigationContext
-	Feeds       []*feedItem
-	Posts       []*postItem
-	ErrorString string
+	Feeds         []*feedItem
+	Posts         []*postItem
+	UserSwitchURL string
+	ErrorString   string
 }
 
 type errorData struct {
@@ -165,8 +168,9 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 			NextOffset:  int32(nextOffset),
 			HasNextPage: hasNextPage,
 		},
-		Feeds:       currUserFeeds,
-		ErrorString: errMsg,
+		Feeds:         currUserFeeds,
+		UserSwitchURL: "/feeds",
+		ErrorString:   errMsg,
 	}, statusCode)
 }
 
@@ -514,11 +518,80 @@ func (s *Server) handleGetPosts(w http.ResponseWriter, r *http.Request) {
 			NextOffset:  int32(nextOffset),
 			HasNextPage: hasNextPage,
 		},
-		Posts:       currUserPosts,
-		Feeds:       availableFeeds,
-		ErrorString: errMsg,
+		Posts:         currUserPosts,
+		Feeds:         availableFeeds,
+		UserSwitchURL: "/posts",
+		ErrorString:   errMsg,
 	}, statusCode,
 	)
+}
+
+func (s *Server) handleTogglePostReadStatus(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+
+	postIDStr := r.PathValue("id")
+	if postIDStr == "" {
+		log.Print("no post provided to be marked read")
+		s.respondWithHTML(w, "error", errorData{ErrorString: "no post provided"}, http.StatusBadRequest)
+		return
+	}
+
+	postID, err := uuid.Parse(postIDStr)
+	if err != nil {
+		log.Printf("failed to mark post (%s), could not resolve postID. error: %v", postIDStr, err)
+		s.respondWithHTML(w, "error", errorData{ErrorString: "invalid post"}, http.StatusBadRequest)
+		return
+	}
+
+	userID, _, err := s.resolveCurrentUser(r)
+	if err != nil {
+		if errors.Is(err, errInvalidUser) {
+			log.Printf("failed to mark post (%s) as read, could not resolve user. error: %v", postIDStr, err)
+			s.respondWithHTML(w, "error", errorData{ErrorString: "invalid user"}, http.StatusBadRequest)
+			return
+		}
+
+		s.respondWithHTML(w, "error", errorData{ErrorString: "internal server error"}, http.StatusInternalServerError)
+		return
+	}
+
+	// We always setup the params as if we are inserting a new row (e.g. reading for first time).
+	// The query handles if there already is a row (e.g. we've already read it) and flips the bool.
+	markReadParams := database.TogglePostReadStatusParams{
+		ID:        uuid.New(),
+		PostID:    postID,
+		UserID:    userID.UUID,
+		IsRead:    true,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	_, err = s.queries.TogglePostReadStatus(ctx, markReadParams)
+	if err != nil {
+		log.Printf("failed to mark post (%s) as read for user (%s). error: %v", postIDStr, userID.UUID.String(), err)
+		s.respondWithHTML(w, "error", errorData{ErrorString: "internal server error"}, http.StatusInternalServerError)
+		return
+	}
+
+	getPostParams := database.GetPostByIDParams{
+		UserID: userID.UUID,
+		ID:     postID,
+	}
+	updatedPost, err := s.queries.GetPostByID(ctx, getPostParams)
+	if err != nil {
+		log.Printf("failed to mark post (%s) as read for user (%s). error: %v", postIDStr, userID.UUID.String(), err)
+		s.respondWithHTML(w, "error", errorData{ErrorString: "internal server error"}, http.StatusInternalServerError)
+		return
+	}
+
+	s.respondWithHTML(w, "postItem", postItem{
+		ID:          updatedPost.ID,
+		Title:       updatedPost.Title,
+		URL:         updatedPost.Url,
+		IsRead:      updatedPost.IsRead.Bool,
+		PublishedAt: updatedPost.PublishedAt.Format("02-01-2006 15:04"),
+	}, http.StatusOK)
 }
 
 func (s *Server) resolveOffsets(r *http.Request) (prevOffset int, currOffset int, nextOffset int) {
@@ -635,7 +708,7 @@ func (s *Server) resolveCurrentUser(r *http.Request) (userID uuid.NullUUID, from
 
 	parsedUUID, err := uuid.Parse(userStr)
 	if err != nil {
-		return uuid.NullUUID{Valid: false}, fromCookie, err
+		return uuid.NullUUID{Valid: false}, fromCookie, errInvalidUser
 	}
 
 	return uuid.NullUUID{

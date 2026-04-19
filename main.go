@@ -107,7 +107,6 @@ func main() {
 
 	// Start background synchronization
 	wg.Go(func() {
-		defer wg.Done()
 		feedservice.Start(ctx, feedService)
 	})
 

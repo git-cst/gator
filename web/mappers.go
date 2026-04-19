@@ -17,10 +17,6 @@ func toPostItem(row database.GetPostsForUserRow) *postItem {
 		description = row.Description.String
 	}
 
-	if row.IsRead.Valid {
-		isRead = row.IsRead.Bool
-	}
-
 	return &postItem{
 		ID:          row.ID,
 		Title:       row.Title,

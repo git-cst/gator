@@ -29,10 +29,11 @@ type healthResponse struct {
 }
 
 type feedItem struct {
-	ID         uuid.UUID
-	Title      string
-	URL        string
-	Subscribed bool
+	ID          uuid.UUID
+	Title       string
+	URL         string
+	Description string
+	Subscribed  bool
 }
 
 type postItem struct {
@@ -308,54 +309,46 @@ func (s *Server) handleUnsubscribeUserFromFeed(w http.ResponseWriter, r *http.Re
 	var statusCode int
 	statusCode = http.StatusSeeOther
 	r.Body = http.MaxBytesReader(w, r.Body, 1024*1024)
-	feedTitle := r.FormValue("feed_title")
-	feedURL := r.FormValue("feed_url")
+	feedIDstr := r.PathValue("id")
+	feedID, err := uuid.Parse(feedIDstr)
+	if err != nil {
+		statusCode = http.StatusBadRequest
+		errMsg := "invalid user"
+		log.Printf("Failed to parse feed string (%s) to UUID whilst unsubbing, error: %v", feedIDstr, err)
+		s.respondWithHTML(w, "error", errorData{ErrorString: errMsg}, statusCode)
+		return
+	}
 
 	currUserUUID, _, err := s.resolveCurrentUser(r)
 	if err != nil {
 		// Can't parse UUID so we exit early
 		statusCode = http.StatusBadRequest
 		errMsg := "invalid user"
-		log.Printf("Failed to parse string to UUID whilst unsubbing from %s (%s), error: %v", feedTitle, feedURL, err)
-		s.respondWithHTML(w, "error", errorData{ErrorString: errMsg}, statusCode)
-		return
-	}
-
-	feed, err := s.queries.GetFeedByUrl(ctx, feedURL)
-	if errors.Is(err, sql.ErrNoRows) {
-		statusCode = http.StatusBadRequest
-		errMsg := fmt.Sprintf("Feed: %s (%s) not found.", feedTitle, feedURL)
-		log.Printf("Failed to retrieve %s (%s), error: %v", feedTitle, feedURL, err)
-		s.respondWithHTML(w, "error", errorData{ErrorString: errMsg}, statusCode)
-		return
-	} else if err != nil {
-		statusCode = http.StatusInternalServerError
-		errMsg := fmt.Sprintf("Unexpected error whilst deleting %s (%s)", feedTitle, feedURL)
-		log.Printf("Failed to retrieve %s (%s), error: %v", feedTitle, feedURL, err)
+		log.Printf("Failed to parse string to UUID whilst unsubbing from %s, error: %v", feedIDstr, err)
 		s.respondWithHTML(w, "error", errorData{ErrorString: errMsg}, statusCode)
 		return
 	}
 
 	unsubParams := database.DeleteFeedForUserParams{
-		FeedID: feed.ID,
+		FeedID: feedID,
 		UserID: currUserUUID.UUID,
 	}
 
-	_, err = s.queries.DeleteFeedForUser(ctx, unsubParams)
+	deletedFeed, err := s.queries.DeleteFeedForUser(ctx, unsubParams)
 	if err != nil {
 		statusCode = http.StatusInternalServerError
-		errMsg := fmt.Sprintf("Unexpected error whilst deleting %s (%s)", feedTitle, feedURL)
-		log.Printf("Failed to retrieve %s (%s), error: %v", feedTitle, feedURL, err)
+		errMsg := fmt.Sprintf("Unexpected error whilst deleting %s", feedID)
+		log.Printf("Failed to delete %s, error: %v", feedID, err)
 		s.respondWithHTML(w, "error", errorData{ErrorString: errMsg}, statusCode)
 		return
 	}
 
 	_, currOffsetInt, _ := s.resolveOffsets(r)
 
-	log.Printf("Successfully unsubscribed user %s from feed: %s (%s)", currUserUUID.UUID.String(), feedTitle, feedURL)
+	log.Printf("Successfully unsubscribed user %s from feed: %s (%s)", currUserUUID.UUID.String(), deletedFeed.Title, deletedFeed.Url)
 
 	if r.Header.Get("HX-Request") == "true" {
-		s.respondWithHTML(w, "feedItem", feedItem{ID: feed.ID, Title: feed.Title, URL: feed.Url, Subscribed: false}, http.StatusOK)
+		s.respondWithHTML(w, "feedItem", feedItem{ID: deletedFeed.FeedID, Title: deletedFeed.Title, URL: deletedFeed.Url, Subscribed: false}, http.StatusOK)
 		return
 	}
 
@@ -371,49 +364,42 @@ func (s *Server) handleSubscribeUserToFeed(w http.ResponseWriter, r *http.Reques
 	var statusCode int
 	statusCode = http.StatusSeeOther
 	r.Body = http.MaxBytesReader(w, r.Body, 1024*1024)
-	feedTitle := r.FormValue("feed_title")
-	feedURL := r.FormValue("feed_url")
+	feedIDstr := r.PathValue("id")
+	feedID, err := uuid.Parse(feedIDstr)
+	if err != nil {
+		statusCode = http.StatusBadRequest
+		errMsg := "invalid user"
+		log.Printf("Failed to parse feed string (%s) to UUID whilst unsubbing, error: %v", feedIDstr, err)
+		s.respondWithHTML(w, "error", errorData{ErrorString: errMsg}, statusCode)
+		return
+	}
 
 	currUserUUID, _, err := s.resolveCurrentUser(r)
 	if err != nil {
 		// Can't parse UUID so we exit early
 		statusCode = http.StatusBadRequest
 		errMsg := "invalid user"
-		log.Printf("Failed to parse string to UUID whilst unsubbing from %s (%s), error: %v", feedTitle, feedURL, err)
+		log.Printf("Failed to parse string to UUID whilst unsubbing from %s, error: %v", feedIDstr, err)
 		s.respondWithHTML(w, "error", errorData{ErrorString: errMsg}, statusCode)
 		return
 	}
 
-	feed, err := s.queries.GetFeedByUrl(ctx, feedURL)
-	if errors.Is(err, sql.ErrNoRows) {
-		statusCode = http.StatusBadRequest
-		errMsg := fmt.Sprintf("Feed: %s (%s) not found.", feedTitle, feedURL)
-		log.Printf("Failed to retrieve %s (%s), error: %v", feedTitle, feedURL, err)
-		s.respondWithHTML(w, "error", errorData{ErrorString: errMsg}, statusCode)
-		return
-	} else if err != nil {
-		statusCode = http.StatusInternalServerError
-		errMsg := fmt.Sprintf("Unexpected error whilst subscribing to %s (%s)", feedTitle, feedURL)
-		log.Printf("Failed to retrieve %s (%s), error: %v", feedTitle, feedURL, err)
-		s.respondWithHTML(w, "error", errorData{ErrorString: errMsg}, statusCode)
-		return
-	}
-
-	_, err = s.subscribeUserToFeed(ctx, currUserUUID.UUID, feed.ID)
+	subscribedFeedRow, err := s.subscribeUserToFeed(ctx, currUserUUID.UUID, feedID)
 	if err != nil {
 		statusCode = http.StatusInternalServerError
-		errMsg := fmt.Sprintf("Unexpected error whilst subscribing to %s (%s)", feedTitle, feedURL)
-		log.Printf("Failed to add %s (%s) for user (%s), error: %v", feedTitle, feedURL, currUserUUID.UUID.String(), err)
+		errMsg := fmt.Sprintf("Unexpected error whilst subscribing to %s", feedID)
+		log.Printf("Failed to add %s for user (%s), error: %v", feedID, currUserUUID.UUID.String(), err)
 		s.respondWithHTML(w, "error", errorData{ErrorString: errMsg}, statusCode)
 		return
 	}
+	subscribedFeed := feedItem{ID: subscribedFeedRow.FeedID, Title: subscribedFeedRow.Title, URL: subscribedFeedRow.Url, Subscribed: true}
 
-	log.Printf("Successfully subscribed user (%s) to %s (%s)", currUserUUID.UUID.String(), feedTitle, feedURL)
+	log.Printf("Successfully subscribed user (%s) to %s (%s)", currUserUUID.UUID.String(), subscribedFeed.Title, subscribedFeed.URL)
 
 	_, currOffsetInt, _ := s.resolveOffsets(r)
 
 	if r.Header.Get("HX-Request") == "true" {
-		s.respondWithHTML(w, "feedItem", feedItem{ID: feed.ID, Title: feed.Title, URL: feed.Url, Subscribed: true}, http.StatusOK)
+		s.respondWithHTML(w, "feedItem", subscribedFeed, http.StatusOK)
 		return
 	}
 
@@ -421,7 +407,7 @@ func (s *Server) handleSubscribeUserToFeed(w http.ResponseWriter, r *http.Reques
 	http.Redirect(w, r, redirectURL, statusCode)
 }
 
-func (s *Server) subscribeUserToFeed(ctx context.Context, userID uuid.UUID, feedID uuid.UUID) (database.FeedsUser, error) {
+func (s *Server) subscribeUserToFeed(ctx context.Context, userID uuid.UUID, feedID uuid.UUID) (database.AddFeedForUserRow, error) {
 	addFeedParams := database.AddFeedForUserParams{
 		ID:     uuid.New(),
 		FeedID: feedID,
@@ -429,7 +415,7 @@ func (s *Server) subscribeUserToFeed(ctx context.Context, userID uuid.UUID, feed
 	}
 	feedUserRow, err := s.queries.AddFeedForUser(ctx, addFeedParams)
 	if err != nil {
-		return database.FeedsUser{}, err
+		return database.AddFeedForUserRow{}, err
 	}
 
 	return feedUserRow, nil

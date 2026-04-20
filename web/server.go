@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"embed"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -11,6 +12,9 @@ import (
 	"gator/config"
 	"gator/database"
 )
+
+//go:embed static
+var staticFiles embed.FS
 
 type Server struct {
 	queries   *database.Queries
@@ -42,6 +46,7 @@ func NewServer(queries *database.Queries, serviceConfig *config.ServiceConfig) (
 	}
 
 	serverStruct.registerRoutes()
+	serverStruct.setupStaticFiles()
 
 	return serverStruct, nil
 }
@@ -52,6 +57,10 @@ func (s *Server) ListenAndServe() error {
 
 func (s *Server) Shutdown(ctx context.Context) error {
 	return s.server.Shutdown(ctx)
+}
+
+func (s *Server) setupStaticFiles() {
+	s.mux.Handle("GET /static/", http.FileServer(http.FS(staticFiles)))
 }
 
 func (s *Server) registerRoutes() {

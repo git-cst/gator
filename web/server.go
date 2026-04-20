@@ -75,6 +75,7 @@ func (s *Server) registerRoutes() {
 
 	s.mux.HandleFunc("GET /posts", s.handleGetPosts)
 	s.mux.HandleFunc("POST /posts/{id}/toggle_read", s.handleTogglePostReadStatus)
+	s.mux.HandleFunc("POST /posts/{id}/mark_read", s.handleMarkPostRead)
 }
 
 func (s *Server) uptime() string {

@@ -5,23 +5,29 @@
 	<meta charset="UTF-8" />
 	<title>Gator - Posts</title>
 	<script src="https://unpkg.com/htmx.org@1.9.10"></script>
+	<link rel="stylesheet" href="/static/css/style.css">
 </head>
 
 <body>
-	{{ template "userSelector" . }}
-	<a href="/feeds">Feeds</a>
-	<div id="main-content">
-		{{ template "postContent" . }}
-	</div>
+	<nav>
+		{{ template "userSelector" . }}
+		<a href="/feeds">Feeds</a>
+	</nav>
+
+	<main>
+		<div id="main-content">
+			{{ template "postContent" . }}
+		</div>
+	</main>
 </body>
 
 </html>
 
 {{ define "postContent" }}
 {{ template "error" . }}
-<div id="post-list-title" class="h1">
+<h1 id="post-list-title" class="h1">
 	Posts
-</div>
+</h1>
 <div id="post-list">
 	{{ range .Posts }}
 	{{ template "postItem" . }}

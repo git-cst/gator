@@ -17,34 +17,52 @@
 
 {{ define "feedItem" }}
 <article id="feed-{{ .ID }}" class="feed-item">
-	<span class="feed-container">
-		<a href="{{ .URL }}">{{ .Title }}</a>
-		<input type="checkbox"
+	<span class="card-header">
+		<span class="card-meta">
+			<a href="{{ .URL }}">{{ .Title }}</a>
+		</span>
+		<input type="checkbox" class="toggle" id="toggle-{{ .ID }}"
 			hx-post="{{ if .Subscribed }}/feeds/{{ .ID }}/unsubscribe{{ else }}/feeds/{{ .ID }}/subscribe{{ end }}"
 			hx-target="#feed-{{ .ID }}" hx-swap="outerHTML" hx-trigger="change" {{ if .Subscribed
 			}}checked{{ end }}>
+		<label for="toggle-{{ .ID }}"></label>
 	</span>
+	{{ if .Description }}
+	<div class="card-description">{{ .Description }}</div>
+	{{ end }}
 </article>
 {{ end }}
 
 {{ define "postItem" }}
-<article id="post-{{ .ID }}" class="post-item">
-	<a href="{{ .URL }}">{{ .Title }}</a>
-	<time>{{ .PublishedAt }}</time>
-	<input type="checkbox" hx-post="/posts/{{ .ID }}/toggle_read" hx-target="#post-{{ .ID }}" hx-swap="outerHTML"
-		hx-trigger="change" {{ if .IsRead }}checked{{ end }}>
+<article id="post-{{ .ID }}" class="post-item {{ if .IsRead }}is-read{{ end }}" hx-post="/posts/{{ .ID }}/mark_read"
+	hx-target="#post-{{ .ID }}" hx-swap="outerHTML" hx-trigger="click">
+	<span class="card-header">
+		<span class="card-meta">
+			<a href="{{ .URL }}" target="_blank">{{ .Title }}</a>
+			<time>{{ .PublishedAt }}</time>
+			<div class="post-source">Source: {{ .SourceTitle }} ({{ .SourceURL }})</div>
+		</span>
+		<span class="read-indicator" hx-post="/posts/{{ .ID }}/toggle_read" hx-target="#post-{{ .ID }}"
+			hx-swap="outerHTML" hx-trigger="click">
+			<span class="read-circle {{ if .IsRead }}read{{ end }}"></span>
+			&#128366;
+		</span>
+	</span>
+	{{ if .Description }}
+	<div class="card-description {{ if .IsRead }}is-read{{ end }}">{{ .Description }}</div>
+	{{ end }}
 </article>
 {{ end }}
 
 {{ define "paginationButtons" }}
-<div id="button-container">
+<div id="btn-container">
 	{{ if .CurrUser }}
-	<button hx-get="{{ .UserSwitchURL }}" hx-target="#main-content"
+	<button class="btn btn-secondary" hx-get="{{ .UserSwitchURL }}" hx-target="#main-content"
 		hx-vals='{"user_id": "{{ .CurrUser.ID }}", "offset": "{{ .PrevOffset }}"}' {{ if eq .CurrOffset 0
 		}}disabled{{ end }}>
 		Previous
 	</button>
-	<button hx-get="{{ .UserSwitchURL }}" hx-target="#main-content"
+	<button class="btn btn-secondary" hx-get="{{ .UserSwitchURL }}" hx-target="#main-content"
 		hx-vals='{"user_id": "{{ .CurrUser.ID }}", "offset": "{{ .NextOffset }}"}' {{ if not .HasNextPage
 		}}disabled{{ end }}>
 		Next

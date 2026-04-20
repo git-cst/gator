@@ -33,9 +33,21 @@ func toPostItem(row database.GetPostsForUserRow) *postItem {
 		description = row.Description.String
 	}
 
+	var feedTitle string
+	if row.Feedtitle.Valid {
+		feedTitle = row.Feedtitle.String
+	}
+
+	var feedURL string
+	if row.Feedurl.Valid {
+		feedURL = row.Feedurl.String
+	}
+
 	return &postItem{
 		ID:          row.ID,
 		Title:       row.Title,
+		SourceTitle: feedTitle,
+		SourceURL:   feedURL,
 		Description: stripHTML(description),
 		URL:         row.Url,
 		IsRead:      row.IsRead.Valid && row.IsRead.Bool,

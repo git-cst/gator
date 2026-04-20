@@ -5,14 +5,17 @@
   <meta charset="UTF-8" />
   <title>Gator - Feeds</title>
   <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <link rel="stylesheet" href="/static/css/style.css">
 </head>
 
 <body>
-  {{ template "userSelector" . }}
-  <a href="/posts">Posts</a>
-  <button onclick="document.getElementById('add-feed-dialog').showModal()">
-    Add Feed
-  </button>
+  <nav>
+    {{ template "userSelector" . }}
+    <a href="/posts">Posts</a>
+    <button class="btn btn-primary" onclick="document.getElementById('add-feed-dialog').showModal()">
+      Add Feed
+    </button>
+  </nav>
 
   <dialog id="add-feed-dialog">
     <form hx-post="/feeds" hx-target="#feed-list" hx-swap="innerHTML"
@@ -23,16 +26,20 @@
       <input type="text" name="feed_title" placeholder="Title" />
       <input type="text" name="feed_url" placeholder="URL" />
       <input type="text" name="feed_description" placeholder="Description (optional)" />
-      <button type="submit">Add</button>
-      <button type="button" onclick="document.getElementById('add-feed-dialog').close()">
-        Cancel
-      </button>
+      <div id="btn-container">
+        <button class="btn btn-primary" type="submit">Add</button>
+        <button class="btn btn-secondary" type="button" onclick="document.getElementById('add-feed-dialog').close()">
+          Cancel
+        </button>
+      </div>
     </form>
   </dialog>
 
-  <div id="main-content">
-    {{ template "feedContent" . }}
-  </div>
+  <main>
+    <div id="main-content">
+      {{ template "feedContent" . }}
+    </div>
+  </main>
 
 
 </body>
@@ -41,9 +48,9 @@
 
 {{ define "feedContent" }}
 {{ template "error" . }}
-<div id="feed-list-title" class="h1">
+<h1 id="feed-list-title" class="h1">
   Feeds
-</div>
+</h1>
 <div id="feed-list">
   {{ range .Feeds }}
   {{ template "feedItem" . }}

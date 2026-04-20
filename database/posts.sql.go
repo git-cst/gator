@@ -63,15 +63,20 @@ SELECT
 	p.title,
 	p.url,
 	p.description,
+	f.title as FeedTitle,
+	f.url as FeedURL,
 	pu.is_read,
 	p.published_at
 FROM posts as p
 
 LEFT JOIN feeds_users fu
-ON p.feed_id = fu.feed_id
+ON p.feed_id = fu.feed_id AND fu.user_id = $1
 
 LEFT JOIN posts_users pu
 ON p.id = pu.post_id AND pu.user_id = $1
+
+LEFT JOIN feeds f
+ON f.id = fu.feed_id
 
 WHERE p.id = $2
 `
@@ -86,6 +91,8 @@ type GetPostByIDRow struct {
 	Title       string
 	Url         string
 	Description sql.NullString
+	Feedtitle   sql.NullString
+	Feedurl     sql.NullString
 	IsRead      sql.NullBool
 	PublishedAt time.Time
 }
@@ -98,6 +105,8 @@ func (q *Queries) GetPostByID(ctx context.Context, arg GetPostByIDParams) (GetPo
 		&i.Title,
 		&i.Url,
 		&i.Description,
+		&i.Feedtitle,
+		&i.Feedurl,
 		&i.IsRead,
 		&i.PublishedAt,
 	)
@@ -110,15 +119,20 @@ SELECT
 	p.title,
 	p.url,
 	p.description,
+	f.title as FeedTitle,
+	f.url as FeedUrl,
 	pu.is_read,
 	p.published_at
 FROM posts as p
 
 LEFT JOIN feeds_users fu
-ON p.feed_id = fu.feed_id
+ON p.feed_id = fu.feed_id AND fu.user_id = $1
 
 LEFT JOIN posts_users pu
 ON p.id = pu.post_id AND pu.user_id = $1
+
+LEFT JOIN feeds f
+ON fu.feed_id = f.id
 
 WHERE fu.user_id = $1
 
@@ -137,6 +151,8 @@ type GetPostsForUserRow struct {
 	Title       string
 	Url         string
 	Description sql.NullString
+	Feedtitle   sql.NullString
+	Feedurl     sql.NullString
 	IsRead      sql.NullBool
 	PublishedAt time.Time
 }
@@ -155,6 +171,8 @@ func (q *Queries) GetPostsForUser(ctx context.Context, arg GetPostsForUserParams
 			&i.Title,
 			&i.Url,
 			&i.Description,
+			&i.Feedtitle,
+			&i.Feedurl,
 			&i.IsRead,
 			&i.PublishedAt,
 		); err != nil {
@@ -169,6 +187,53 @@ func (q *Queries) GetPostsForUser(ctx context.Context, arg GetPostsForUserParams
 		return nil, err
 	}
 	return items, nil
+}
+
+const markPostAsRead = `-- name: MarkPostAsRead :one
+INSERT INTO posts_users(
+	id,
+	post_id,
+	user_id,
+	is_read,
+	created_at,
+	updated_at
+)
+VALUES ($1, $2, $3, $4, $5, $6)
+
+ON CONFLICT (post_id, user_id) DO UPDATE SET
+	is_read = EXCLUDED.is_read,
+	updated_at = EXCLUDED.updated_at
+RETURNING id, post_id, user_id, is_read, created_at, updated_at
+`
+
+type MarkPostAsReadParams struct {
+	ID        uuid.UUID
+	PostID    uuid.UUID
+	UserID    uuid.UUID
+	IsRead    bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
+func (q *Queries) MarkPostAsRead(ctx context.Context, arg MarkPostAsReadParams) (PostsUser, error) {
+	row := q.db.QueryRowContext(ctx, markPostAsRead,
+		arg.ID,
+		arg.PostID,
+		arg.UserID,
+		arg.IsRead,
+		arg.CreatedAt,
+		arg.UpdatedAt,
+	)
+	var i PostsUser
+	err := row.Scan(
+		&i.ID,
+		&i.PostID,
+		&i.UserID,
+		&i.IsRead,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const togglePostReadStatus = `-- name: TogglePostReadStatus :one

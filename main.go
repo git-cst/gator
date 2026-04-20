@@ -26,13 +26,15 @@ Bugs:
 
 User selector disappears after cookie redirect on page return
 BBC RSS feed (and potentially others) have malformed XML — consider gofeed library for more lenient parsing
+Unsubscribing / Subscribing broken right now
 
 Features:
 
-Split into two pages: /feeds for subscription management, /posts for reading
-Feed discovery page — show all feeds in db, allow subscribing to existing feeds without re-adding URL
-POST /feeds/subscribe route — complement to existing /feeds/unsubscribe
-Read/unread tracking — users_posts junction table, change post styling rather than hiding
+Post card improvements:
+ - Mark post as read when clicking the article link (add hx-post to <a> tag alongside href)
+ - Feed filtering on posts page (filter posts by specific feed)
+ - Bookmarking (requires is_bookmarked column on posts_users)
+ - Archiving (requires is_archived column on posts_users)
 Stale post archival — delete posts older than 180 days via background job
   - Make it so that in the environment file the period is configurable and whether or not deletion is just archival.
 

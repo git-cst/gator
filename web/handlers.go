@@ -41,6 +41,8 @@ type postItem struct {
 	Title       string
 	Description string
 	URL         string
+	SourceTitle string
+	SourceURL   string
 	IsRead      bool
 	PublishedAt string
 }
@@ -348,7 +350,13 @@ func (s *Server) handleUnsubscribeUserFromFeed(w http.ResponseWriter, r *http.Re
 	log.Printf("Successfully unsubscribed user %s from feed: %s (%s)", currUserUUID.UUID.String(), deletedFeed.Title, deletedFeed.Url)
 
 	if r.Header.Get("HX-Request") == "true" {
-		s.respondWithHTML(w, "feedItem", feedItem{ID: deletedFeed.FeedID, Title: deletedFeed.Title, URL: deletedFeed.Url, Subscribed: false}, http.StatusOK)
+		s.respondWithHTML(w, "feedItem", feedItem{
+			ID:          deletedFeed.FeedID,
+			Title:       deletedFeed.Title,
+			Description: deletedFeed.Description.String,
+			URL:         deletedFeed.Url,
+			Subscribed:  false,
+		}, http.StatusOK)
 		return
 	}
 
@@ -392,7 +400,13 @@ func (s *Server) handleSubscribeUserToFeed(w http.ResponseWriter, r *http.Reques
 		s.respondWithHTML(w, "error", errorData{ErrorString: errMsg}, statusCode)
 		return
 	}
-	subscribedFeed := feedItem{ID: subscribedFeedRow.FeedID, Title: subscribedFeedRow.Title, URL: subscribedFeedRow.Url, Subscribed: true}
+	subscribedFeed := feedItem{
+		ID:          subscribedFeedRow.FeedID,
+		Title:       subscribedFeedRow.Title,
+		Description: subscribedFeedRow.Description.String,
+		URL:         subscribedFeedRow.Url,
+		Subscribed:  true,
+	}
 
 	log.Printf("Successfully subscribed user (%s) to %s (%s)", currUserUUID.UUID.String(), subscribedFeed.Title, subscribedFeed.URL)
 
@@ -583,6 +597,78 @@ func (s *Server) handleTogglePostReadStatus(w http.ResponseWriter, r *http.Reque
 		ID:          updatedPost.ID,
 		Title:       updatedPost.Title,
 		URL:         updatedPost.Url,
+		Description: stripHTML(updatedPost.Description.String),
+		SourceTitle: updatedPost.Feedtitle.String,
+		SourceURL:   updatedPost.Url,
+		IsRead:      updatedPost.IsRead.Bool,
+		PublishedAt: updatedPost.PublishedAt.Format("02-01-2006 15:04"),
+	}, http.StatusOK)
+}
+
+func (s *Server) handleMarkPostRead(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+
+	postIDStr := r.PathValue("id")
+	if postIDStr == "" {
+		log.Print("no post provided to be marked read")
+		s.respondWithHTML(w, "error", errorData{ErrorString: "no post provided"}, http.StatusBadRequest)
+		return
+	}
+
+	postID, err := uuid.Parse(postIDStr)
+	if err != nil {
+		log.Printf("failed to mark post (%s), could not resolve postID. error: %v", postIDStr, err)
+		s.respondWithHTML(w, "error", errorData{ErrorString: "invalid post"}, http.StatusBadRequest)
+		return
+	}
+
+	userID, _, err := s.resolveCurrentUser(r)
+	if err != nil {
+		if errors.Is(err, errInvalidUser) {
+			log.Printf("failed to mark post (%s) as read, could not resolve user. error: %v", postIDStr, err)
+			s.respondWithHTML(w, "error", errorData{ErrorString: "invalid user"}, http.StatusBadRequest)
+			return
+		}
+
+		s.respondWithHTML(w, "error", errorData{ErrorString: "internal server error"}, http.StatusInternalServerError)
+		return
+	}
+
+	markReadParams := database.MarkPostAsReadParams{
+		ID:        uuid.New(),
+		PostID:    postID,
+		UserID:    userID.UUID,
+		IsRead:    true,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	}
+
+	_, err = s.queries.MarkPostAsRead(ctx, markReadParams)
+	if err != nil {
+		log.Printf("failed to mark post (%s) as read for user (%s). error: %v", postIDStr, userID.UUID.String(), err)
+		s.respondWithHTML(w, "error", errorData{ErrorString: "internal server error"}, http.StatusInternalServerError)
+		return
+	}
+
+	getPostParams := database.GetPostByIDParams{
+		UserID: userID.UUID,
+		ID:     postID,
+	}
+	updatedPost, err := s.queries.GetPostByID(ctx, getPostParams)
+	if err != nil {
+		log.Printf("failed to mark post (%s) as read for user (%s). error: %v", postIDStr, userID.UUID.String(), err)
+		s.respondWithHTML(w, "error", errorData{ErrorString: "internal server error"}, http.StatusInternalServerError)
+		return
+	}
+
+	s.respondWithHTML(w, "postItem", postItem{
+		ID:          updatedPost.ID,
+		Title:       updatedPost.Title,
+		URL:         updatedPost.Url,
+		Description: stripHTML(updatedPost.Description.String),
+		SourceTitle: updatedPost.Feedtitle.String,
+		SourceURL:   updatedPost.Feedurl.String,
 		IsRead:      updatedPost.IsRead.Bool,
 		PublishedAt: updatedPost.PublishedAt.Format("02-01-2006 15:04"),
 	}, http.StatusOK)

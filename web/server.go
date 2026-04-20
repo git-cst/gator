@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
-	"path/filepath"
 	"time"
 
 	"gator/config"
@@ -14,7 +13,7 @@ import (
 )
 
 //go:embed static
-var staticFiles embed.FS
+var embeddedFiles embed.FS
 
 type Server struct {
 	queries   *database.Queries
@@ -25,10 +24,9 @@ type Server struct {
 }
 
 func NewServer(queries *database.Queries, serviceConfig *config.ServiceConfig) (*Server, error) {
-	globPattern := filepath.Join(serviceConfig.TemplateDir, "*.html")
-	parsedTemplate, err := template.ParseGlob(globPattern)
+	parsedTemplate, err := template.ParseFS(embeddedFiles, "static/templates/*.html")
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse template files with pattern %q: %w", globPattern, err)
+		return nil, fmt.Errorf("failed to parse template files: %w", err)
 	}
 
 	mux := http.NewServeMux()
@@ -60,7 +58,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 }
 
 func (s *Server) setupStaticFiles() {
-	s.mux.Handle("GET /static/", http.FileServer(http.FS(staticFiles)))
+	s.mux.Handle("GET /static/", http.FileServer(http.FS(embeddedFiles)))
 }
 
 func (s *Server) registerRoutes() {

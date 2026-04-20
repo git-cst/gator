@@ -2,6 +2,7 @@ package database
 
 import (
 	"database/sql"
+	"embed"
 	"fmt"
 
 	"gator/config"
@@ -10,15 +11,19 @@ import (
 	"github.com/pressly/goose/v3"
 )
 
+//go:embed sql/migrations
+var migrations embed.FS
+
 func RunMigrations(dbConfig *config.DBConfig, db *sql.DB) error {
 	dbDriver := dbConfig.DBDriver
-	migrationDir := dbConfig.MigrationDir
+
+	goose.SetBaseFS(migrations)
 
 	if err := goose.SetDialect(dbDriver); err != nil {
 		return fmt.Errorf("setting goose dialect: %w", err)
 	}
 
-	if err := goose.Up(db, migrationDir); err != nil {
+	if err := goose.Up(db, "sql/migrations"); err != nil {
 		return fmt.Errorf("running migrations: %w", err)
 	}
 

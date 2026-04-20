@@ -13,14 +13,19 @@ import (
 )
 
 const addFeedForUser = `-- name: AddFeedForUser :one
-INSERT INTO feeds_users(
-	id,
-	feed_id,
-	user_id,
-	created_at,
-	updated_at
-) VALUES ($1, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-RETURNING id, user_id, feed_id, created_at, updated_at
+WITH inserted AS (
+	INSERT INTO feeds_users(
+		id,
+		feed_id,
+		user_id,
+		created_at,
+		updated_at
+	) VALUES ($1, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+	RETURNING id, user_id, feed_id, created_at, updated_at
+)
+SELECT inserted.feed_id, inserted.user_id, f.title, f.url, f.description
+FROM inserted
+JOIN feeds AS f ON f.id = inserted.feed_id
 `
 
 type AddFeedForUserParams struct {
@@ -29,15 +34,23 @@ type AddFeedForUserParams struct {
 	UserID uuid.UUID
 }
 
-func (q *Queries) AddFeedForUser(ctx context.Context, arg AddFeedForUserParams) (FeedsUser, error) {
+type AddFeedForUserRow struct {
+	FeedID      uuid.UUID
+	UserID      uuid.UUID
+	Title       string
+	Url         string
+	Description sql.NullString
+}
+
+func (q *Queries) AddFeedForUser(ctx context.Context, arg AddFeedForUserParams) (AddFeedForUserRow, error) {
 	row := q.db.QueryRowContext(ctx, addFeedForUser, arg.ID, arg.FeedID, arg.UserID)
-	var i FeedsUser
+	var i AddFeedForUserRow
 	err := row.Scan(
-		&i.ID,
-		&i.UserID,
 		&i.FeedID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
+		&i.UserID,
+		&i.Title,
+		&i.Url,
+		&i.Description,
 	)
 	return i, err
 }
@@ -110,8 +123,14 @@ func (q *Queries) DeleteFeed(ctx context.Context, id uuid.UUID) (Feed, error) {
 }
 
 const deleteFeedForUser = `-- name: DeleteFeedForUser :one
-DELETE FROM feeds_users WHERE user_id = $1 AND feed_id=$2
-RETURNING id, user_id, feed_id, created_at, updated_at
+WITH deleted AS (
+    DELETE FROM feeds_users
+    WHERE user_id = $1 AND feed_id=$2
+    RETURNING feed_id, user_id
+)
+SELECT deleted.feed_id, deleted.user_id, f.title, f.url, f.description
+FROM deleted
+JOIN feeds AS f ON f.id = deleted.feed_id
 `
 
 type DeleteFeedForUserParams struct {
@@ -119,15 +138,23 @@ type DeleteFeedForUserParams struct {
 	FeedID uuid.UUID
 }
 
-func (q *Queries) DeleteFeedForUser(ctx context.Context, arg DeleteFeedForUserParams) (FeedsUser, error) {
+type DeleteFeedForUserRow struct {
+	FeedID      uuid.UUID
+	UserID      uuid.UUID
+	Title       string
+	Url         string
+	Description sql.NullString
+}
+
+func (q *Queries) DeleteFeedForUser(ctx context.Context, arg DeleteFeedForUserParams) (DeleteFeedForUserRow, error) {
 	row := q.db.QueryRowContext(ctx, deleteFeedForUser, arg.UserID, arg.FeedID)
-	var i FeedsUser
+	var i DeleteFeedForUserRow
 	err := row.Scan(
-		&i.ID,
-		&i.UserID,
 		&i.FeedID,
-		&i.CreatedAt,
-		&i.UpdatedAt,
+		&i.UserID,
+		&i.Title,
+		&i.Url,
+		&i.Description,
 	)
 	return i, err
 }
@@ -277,6 +304,39 @@ func (q *Queries) GetDistinctFeedsForUser(ctx context.Context, userID uuid.UUID)
 		return nil, err
 	}
 	return items, nil
+}
+
+const getFeedByID = `-- name: GetFeedByID :one
+SELECT
+	id,
+	title,
+	description,
+	url,
+	last_fetched_at
+FROM feeds
+WHERE id = $1
+LIMIT 1
+`
+
+type GetFeedByIDRow struct {
+	ID            uuid.UUID
+	Title         string
+	Description   sql.NullString
+	Url           string
+	LastFetchedAt sql.NullTime
+}
+
+func (q *Queries) GetFeedByID(ctx context.Context, id uuid.UUID) (GetFeedByIDRow, error) {
+	row := q.db.QueryRowContext(ctx, getFeedByID, id)
+	var i GetFeedByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Description,
+		&i.Url,
+		&i.LastFetchedAt,
+	)
+	return i, err
 }
 
 const getFeedByUrl = `-- name: GetFeedByUrl :one

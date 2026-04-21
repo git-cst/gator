@@ -3,12 +3,10 @@ package web
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -58,9 +56,7 @@ type userContext struct {
 }
 
 type navigationContext struct {
-	CurrOffset  int32
-	PrevOffset  int32
-	NextOffset  int32
+	Cursor      uuid.UUID
 	HasNextPage bool
 }
 
@@ -130,7 +126,15 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 	var statusCode int
 	var currUserFeeds []*feedItem
 	var errMsg string
-	templateName := getTemplateName(r, "feeds.html", "feedContent")
+	var partialPage string
+	cursor := s.resolveCursor(r)
+	if cursor.Valid {
+		partialPage = "nextFeedContent"
+	} else {
+		partialPage = "feedContent"
+	}
+
+	templateName := getTemplateName(r, "feeds.html", partialPage)
 
 	userCtx, fromCookie, err := s.getUserContext(r, w)
 	if err != nil {
@@ -157,7 +161,7 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	currUserFeeds, err = s.getCurrUserFeeds(ctx, userCtx.CurrUser.ID)
+	currUserFeeds, hasNextPage, err := s.getCurrUserFeeds(ctx, userCtx.CurrUser.ID)
 	if err != nil {
 		switch {
 		case errors.Is(err, errNoFeeds):
@@ -168,15 +172,19 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	prevOffset, currOffset, nextOffset := s.resolveOffsets(r)
-	hasNextPage := len(currUserFeeds) == 50
+	if cursor.Valid {
+		templateName = getTemplateName(r, "feeds.html", "nextFeedContent")
+	}
+
+	var nextCursor uuid.UUID
+	if hasNextPage {
+		nextCursor = currUserFeeds[49].ID
+	}
 
 	s.respondWithHTML(w, templateName, feedPageData{
 		userContext: userCtx,
 		navigationContext: navigationContext{
-			PrevOffset:  int32(prevOffset),
-			CurrOffset:  int32(currOffset),
-			NextOffset:  int32(nextOffset),
+			Cursor:      nextCursor,
 			HasNextPage: hasNextPage,
 		},
 		Feeds:         currUserFeeds,
@@ -202,8 +210,16 @@ func (s *Server) handleAddFeed(w http.ResponseWriter, r *http.Request) {
 		Valid:  formDescription != "",
 	}
 
+	rowID, err := uuid.NewV7()
+	if err != nil {
+		statusCode = http.StatusInternalServerError
+		log.Printf("failed to add feed %s (%s). error: %v", feedTitle, feedURL, err)
+		s.respondWithHTML(w, "error", errorData{ErrorString: "internal server error"}, statusCode)
+		return
+	}
+
 	createFeedParams := database.CreateFeedParams{
-		ID:          uuid.New(),
+		ID:          rowID,
 		Title:       feedTitle,
 		Url:         feedURL,
 		Description: feedDescription,
@@ -254,9 +270,9 @@ func (s *Server) handleAddFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, currOffset, _ := s.resolveOffsets(r)
+	cursor := s.resolveCursor(r)
 
-	redirectURL := fmt.Sprintf("/feeds?user_id=%s&offset=%s", feedsUsersRow.UserID.String(), strconv.Itoa(currOffset))
+	redirectURL := fmt.Sprintf("/feeds?user_id=%s&cursor=%s", feedsUsersRow.UserID.String(), cursor.UUID)
 	http.Redirect(w, r, redirectURL, statusCode)
 }
 
@@ -345,7 +361,7 @@ func (s *Server) handleUnsubscribeUserFromFeed(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	_, currOffsetInt, _ := s.resolveOffsets(r)
+	cursor := s.resolveCursor(r)
 
 	log.Printf("Successfully unsubscribed user %s from feed: %s (%s)", currUserUUID.UUID.String(), deletedFeed.Title, deletedFeed.Url)
 
@@ -360,7 +376,7 @@ func (s *Server) handleUnsubscribeUserFromFeed(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	redirectURL := fmt.Sprintf("/feeds?user_id=%s&offset=%s", currUserUUID.UUID.String(), strconv.Itoa(currOffsetInt))
+	redirectURL := fmt.Sprintf("/feeds?user_id=%s&cursor=%s", currUserUUID.UUID.String(), cursor.UUID)
 	http.Redirect(w, r, redirectURL, statusCode)
 }
 
@@ -410,46 +426,15 @@ func (s *Server) handleSubscribeUserToFeed(w http.ResponseWriter, r *http.Reques
 
 	log.Printf("Successfully subscribed user (%s) to %s (%s)", currUserUUID.UUID.String(), subscribedFeed.Title, subscribedFeed.URL)
 
-	_, currOffsetInt, _ := s.resolveOffsets(r)
+	cursor := s.resolveCursor(r)
 
 	if r.Header.Get("HX-Request") == "true" {
 		s.respondWithHTML(w, "feedItem", subscribedFeed, http.StatusOK)
 		return
 	}
 
-	redirectURL := fmt.Sprintf("/feeds?user_id=%s&offset=%s", currUserUUID.UUID.String(), strconv.Itoa(currOffsetInt))
+	redirectURL := fmt.Sprintf("/feeds?user_id=%s&cursor=%s", currUserUUID.UUID.String(), cursor.UUID)
 	http.Redirect(w, r, redirectURL, statusCode)
-}
-
-func (s *Server) subscribeUserToFeed(ctx context.Context, userID uuid.UUID, feedID uuid.UUID) (database.AddFeedForUserRow, error) {
-	addFeedParams := database.AddFeedForUserParams{
-		ID:     uuid.New(),
-		FeedID: feedID,
-		UserID: userID,
-	}
-	feedUserRow, err := s.queries.AddFeedForUser(ctx, addFeedParams)
-	if err != nil {
-		return database.AddFeedForUserRow{}, err
-	}
-
-	return feedUserRow, nil
-}
-
-func (s *Server) getCurrUserFeeds(ctx context.Context, currUser uuid.UUID) ([]*feedItem, error) {
-	var feeds []*feedItem
-
-	feedRows, err := s.queries.GetDistinctFeedsForUser(ctx, currUser)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, errNoFeeds
-	} else if err != nil {
-		return nil, errInternalFeeds
-	} else {
-		for _, row := range feedRows {
-			feeds = append(feeds, toFeedItem(row))
-		}
-	}
-
-	return feeds, nil
 }
 
 func (s *Server) handleGetPosts(w http.ResponseWriter, r *http.Request) {
@@ -460,7 +445,17 @@ func (s *Server) handleGetPosts(w http.ResponseWriter, r *http.Request) {
 	var currUserPosts []*postItem
 	var availableFeeds []*feedItem
 	var errMsg string
-	templateName := getTemplateName(r, "posts.html", "postContent")
+	var hasNextPage bool
+	var partialPage string
+
+	cursor := s.resolveCursor(r)
+	if cursor.Valid {
+		partialPage = "nextPostContent"
+	} else {
+		partialPage = "postContent"
+	}
+
+	templateName := getTemplateName(r, "posts.html", partialPage)
 
 	userCtx, fromCookie, err := s.getUserContext(r, w)
 	if err != nil {
@@ -487,26 +482,26 @@ func (s *Server) handleGetPosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	prevOffset, currOffset, nextOffset := s.resolveOffsets(r)
-
 	params := database.GetPostsForUserParams{
 		UserID: userCtx.CurrUser.ID,
-		Offset: int32(currOffset),
+		Cursor: cursor,
 	}
 	userPostRows, err := s.queries.GetPostsForUser(ctx, params)
 	if errors.Is(err, sql.ErrNoRows) {
 		statusCode = http.StatusNoContent
 	} else if err != nil {
+		log.Printf("GetPostsForUser error: %v", err)
 		statusCode = http.StatusInternalServerError
 		errMsg = "internal server error"
 	} else {
+		userPostRows, hasNextPage = paginate(userPostRows)
 		statusCode = http.StatusOK
 		for _, row := range userPostRows {
 			currUserPosts = append(currUserPosts, toPostItem(row))
 		}
 	}
 
-	availableFeeds, err = s.getCurrUserFeeds(ctx, userCtx.CurrUser.ID)
+	availableFeeds, _, err = s.getCurrUserFeeds(ctx, userCtx.CurrUser.ID)
 	if err != nil {
 		switch {
 		case errors.Is(err, errNoFeeds):
@@ -517,13 +512,15 @@ func (s *Server) handleGetPosts(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	hasNextPage := len(currUserPosts) == 50
+	var nextCursor uuid.UUID
+	if hasNextPage {
+		nextCursor = currUserPosts[49].ID
+	}
+
 	s.respondWithHTML(w, templateName, postPageData{
 		userContext: userCtx,
 		navigationContext: navigationContext{
-			PrevOffset:  int32(prevOffset),
-			CurrOffset:  int32(currOffset),
-			NextOffset:  int32(nextOffset),
+			Cursor:      nextCursor,
 			HasNextPage: hasNextPage,
 		},
 		Posts:         currUserPosts,
@@ -564,10 +561,16 @@ func (s *Server) handleTogglePostReadStatus(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	rowID, err := uuid.NewV7()
+	if err != nil {
+		log.Printf("failed to toggle post (%s) read status for user (%s). error: %v", postIDStr, userID.UUID.String(), err)
+		s.respondWithHTML(w, "error", errorData{ErrorString: "internal server error"}, http.StatusInternalServerError)
+
+	}
 	// We always setup the params as if we are inserting a new row (e.g. reading for first time).
 	// The query handles if there already is a row (e.g. we've already read it) and flips the bool.
 	markReadParams := database.TogglePostReadStatusParams{
-		ID:        uuid.New(),
+		ID:        rowID,
 		PostID:    postID,
 		UserID:    userID.UUID,
 		IsRead:    true,
@@ -635,8 +638,14 @@ func (s *Server) handleMarkPostRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	rowID, err := uuid.NewV7()
+	if err != nil {
+		log.Printf("failed to mark post (%s) as read for user (%s). error: %v", postIDStr, userID.UUID.String(), err)
+		s.respondWithHTML(w, "error", errorData{ErrorString: "internal server error"}, http.StatusInternalServerError)
+
+	}
 	markReadParams := database.MarkPostAsReadParams{
-		ID:        uuid.New(),
+		ID:        rowID,
 		PostID:    postID,
 		UserID:    userID.UUID,
 		IsRead:    true,
@@ -672,160 +681,4 @@ func (s *Server) handleMarkPostRead(w http.ResponseWriter, r *http.Request) {
 		IsRead:      updatedPost.IsRead.Bool,
 		PublishedAt: updatedPost.PublishedAt.Format("02-01-2006 15:04"),
 	}, http.StatusOK)
-}
-
-func (s *Server) resolveOffsets(r *http.Request) (prevOffset int, currOffset int, nextOffset int) {
-	var offsetStr string
-	if r.Method == http.MethodPost || r.Method == http.MethodDelete {
-		offsetStr = r.FormValue("offset")
-	} else {
-		offsetStr = r.URL.Query().Get("offset")
-	}
-
-	offsetInt, err := strconv.Atoi(offsetStr)
-	if err != nil {
-		// We just default to 0 since the reasons for Atoi failing are:
-		// 1) There is no offset passed with the query -> first page
-		// 2) Invalid offset passed -> go to first page again
-		offsetInt = 0
-	}
-
-	currOffset = offsetInt
-	prevOffset = currOffset - 50
-	nextOffset = currOffset + 50
-
-	if prevOffset < 0 {
-		prevOffset = 0
-	}
-
-	return prevOffset, currOffset, nextOffset
-}
-
-func (s *Server) getUserContext(r *http.Request, w http.ResponseWriter) (userData userContext, fromCookie bool, err error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	defer cancel()
-
-	var users []*userItem
-
-	usersRows, err := s.queries.GetUsers(ctx)
-	if errors.Is(err, sql.ErrNoRows) {
-	} else if err != nil {
-		return userContext{}, false, errNoUser
-	} else {
-		for _, row := range usersRows {
-			users = append(users, toUserItem(row))
-		}
-	}
-
-	userUUID, fromCookie, err := s.resolveCurrentUser(r)
-	if err != nil {
-		// Can't parse UUID so we exit early
-		return userContext{Users: users, CurrUser: nil}, false, errInvalidUser
-	}
-
-	// Exit early as we don't have a user and don't need to request the rest of the data
-	if !userUUID.Valid {
-		http.SetCookie(w, &http.Cookie{
-			Name:   "user_id",
-			Value:  "",
-			Path:   "/",
-			MaxAge: -1,
-		})
-
-		return userContext{Users: users, CurrUser: nil}, false, nil
-	}
-
-	currUser, err := s.queries.GetUserById(ctx, userUUID.UUID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return userContext{Users: users, CurrUser: nil}, false, errInvalidUser
-	} else if err != nil {
-		return userContext{Users: users, CurrUser: nil}, false, errInternalUser
-	}
-
-	http.SetCookie(w, &http.Cookie{
-		Name:  "user_id",
-		Value: currUser.ID.String(),
-		Path:  "/",
-	})
-
-	if fromCookie {
-		return userContext{Users: users, CurrUser: toUserItem(currUser)}, true, nil
-	}
-
-	return userContext{Users: users, CurrUser: toUserItem(currUser)}, false, nil
-}
-
-func (s *Server) resolveCurrentUser(r *http.Request) (userID uuid.NullUUID, fromCookie bool, err error) {
-	var userStr string
-
-	if r.Method == http.MethodPost || r.Method == http.MethodDelete {
-		userStr = r.FormValue("user_id")
-	} else {
-		userStr = r.URL.Query().Get("user_id")
-	}
-
-	// user explicitly deselected the user - skip checking cookie
-	_, keyPresent := r.URL.Query()["user_id"]
-	if userStr == "" && keyPresent {
-		return uuid.NullUUID{Valid: false}, false, nil
-	}
-
-	var userCookie *http.Cookie
-	if userStr == "" {
-		userCookie, _ = r.Cookie("user_id")
-	}
-
-	if userStr == "" && userCookie == nil {
-		// nothings valid
-		return uuid.NullUUID{Valid: false}, fromCookie, nil
-	}
-
-	if userCookie != nil && userCookie.Value != "" {
-		// cookie is valid we can use this
-		userStr = userCookie.Value
-		fromCookie = true
-	}
-
-	parsedUUID, err := uuid.Parse(userStr)
-	if err != nil {
-		return uuid.NullUUID{Valid: false}, fromCookie, errInvalidUser
-	}
-
-	return uuid.NullUUID{
-		UUID:  parsedUUID,
-		Valid: true,
-	}, fromCookie, nil
-}
-
-func (s *Server) respondWithHTML(w http.ResponseWriter, templateName string, responseData any, statusCode int) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(statusCode)
-	if err := s.template.ExecuteTemplate(w, templateName, responseData); err != nil {
-		log.Printf("template execution failed: %v", err)
-		fmt.Fprintf(w, "rendering error")
-	}
-}
-
-func respondWithJSON(w http.ResponseWriter, responseData any, statusCode int) {
-	data, err := json.Marshal(responseData)
-	if err != nil {
-		statusCode = http.StatusInternalServerError
-		http.Error(w, "failed to marshal json on health check", statusCode)
-		log.Print("error marshalling response")
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(statusCode)
-	_, err = w.Write(data)
-	if err != nil {
-		log.Print("error writing data")
-	}
-}
-
-func getTemplateName(r *http.Request, fullPage string, partialPage string) string {
-	if r.Header.Get("HX-Request") == "true" {
-		return partialPage
-	}
-	return fullPage
 }

@@ -55,6 +55,19 @@
   {{ range .Feeds }}
   {{ template "feedItem" . }}
   {{ end }}
+  {{ if .HasNextPage }}
+  <div id="next-page" hx-get="/feeds?user_id={{ .CurrUser.ID }}&cursor={{ .Cursor }}" hx-target="#next-page"
+    hx-swap="outerHTML" hx-trigger="revealed"> </div>
+  {{ end }}
 </div>
-{{ template "paginationButtons" . }}
+{{ end }}
+
+{{ define "nextFeedContent" }}
+{{ range .Feeds }}
+{{ template "feedItem" . }}
+{{ end }}
+{{ if .HasNextPage }}
+<div id="next-page" hx-get="/feeds?user_id={{ .CurrUser.ID }}&cursor={{ .Cursor }}" hx-target="#next-page"
+  hx-swap="outerHTML" hx-trigger="revealed"> </div>
+{{ end }}
 {{ end }}

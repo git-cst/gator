@@ -51,7 +51,9 @@ FROM feeds f
 LEFT JOIN feeds_users fu
 ON fu.feed_id = f.id AND fu.user_id = $1
 
-ORDER BY title DESC;
+WHERE fu.user_id = $1
+ORDER BY f.title ASC;
+
 
 -- name: GetFeedByUrl :one
 SELECT
@@ -88,7 +90,10 @@ LEFT JOIN feeds f
 LEFT JOIN users u
 	ON fu.user_id = u.id
 
-WHERE u.id = $1;
+WHERE u.id = $1
+AND f.id < COALESCE(sqlc.narg(cursor), 'ffffffff-ffff-ffff-ffff-ffffffffffff')
+ORDER BY f.id DESC
+LIMIT 51;
 
 -- name: AddFeedForUser :one
 WITH inserted AS (

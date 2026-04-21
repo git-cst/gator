@@ -135,15 +135,15 @@ LEFT JOIN feeds f
 ON fu.feed_id = f.id
 
 WHERE fu.user_id = $1
+AND p.id < COALESCE($2, CAST('ffffffff-ffff-ffff-ffff-ffffffffffff' AS UUID))
 
-ORDER BY p.published_at DESC
-LIMIT 50
-OFFSET $2
+ORDER BY p.id DESC
+LIMIT 51
 `
 
 type GetPostsForUserParams struct {
 	UserID uuid.UUID
-	Offset int32
+	Cursor uuid.NullUUID
 }
 
 type GetPostsForUserRow struct {
@@ -158,7 +158,7 @@ type GetPostsForUserRow struct {
 }
 
 func (q *Queries) GetPostsForUser(ctx context.Context, arg GetPostsForUserParams) ([]GetPostsForUserRow, error) {
-	rows, err := q.db.QueryContext(ctx, getPostsForUser, arg.UserID, arg.Offset)
+	rows, err := q.db.QueryContext(ctx, getPostsForUser, arg.UserID, arg.Cursor)
 	if err != nil {
 		return nil, err
 	}

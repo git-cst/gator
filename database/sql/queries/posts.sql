@@ -27,10 +27,10 @@ LEFT JOIN feeds f
 ON fu.feed_id = f.id
 
 WHERE fu.user_id = $1
+AND p.id < COALESCE(sqlc.narg(cursor), CAST('ffffffff-ffff-ffff-ffff-ffffffffffff' AS UUID))
 
-ORDER BY p.published_at DESC
-LIMIT 50
-OFFSET $2;
+ORDER BY p.id DESC
+LIMIT 51;
 
 -- name: TogglePostReadStatus :one
 INSERT INTO posts_users(

@@ -266,7 +266,8 @@ FROM feeds f
 LEFT JOIN feeds_users fu
 ON fu.feed_id = f.id AND fu.user_id = $1
 
-ORDER BY title DESC
+WHERE fu.user_id = $1
+ORDER BY f.title ASC
 `
 
 type GetDistinctFeedsForUserRow struct {
@@ -386,7 +387,15 @@ LEFT JOIN users u
 	ON fu.user_id = u.id
 
 WHERE u.id = $1
+AND f.id < COALESCE($2, 'ffffffff-ffff-ffff-ffff-ffffffffffff')
+ORDER BY f.id DESC
+LIMIT 51
 `
+
+type GetUserFeedsParams struct {
+	ID     uuid.UUID
+	Cursor uuid.NullUUID
+}
 
 type GetUserFeedsRow struct {
 	ID          uuid.NullUUID
@@ -395,8 +404,8 @@ type GetUserFeedsRow struct {
 	Url         sql.NullString
 }
 
-func (q *Queries) GetUserFeeds(ctx context.Context, id uuid.UUID) ([]GetUserFeedsRow, error) {
-	rows, err := q.db.QueryContext(ctx, getUserFeeds, id)
+func (q *Queries) GetUserFeeds(ctx context.Context, arg GetUserFeedsParams) ([]GetUserFeedsRow, error) {
+	rows, err := q.db.QueryContext(ctx, getUserFeeds, arg.ID, arg.Cursor)
 	if err != nil {
 		return nil, err
 	}

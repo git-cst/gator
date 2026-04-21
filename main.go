@@ -39,8 +39,6 @@ Stale post archival — delete posts older than 180 days via background job
 # Stale user cleanup — soft delete then hard delete after 90 days
 
 Infrastructure:
-
-Containerisation with Docker and docker-compose
 OIDC authentication via Authelia — replaces current manual user seeding
 */
 

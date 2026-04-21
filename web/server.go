@@ -31,7 +31,7 @@ func NewServer(queries *database.Queries, serviceConfig *config.ServiceConfig) (
 
 	mux := http.NewServeMux()
 	srv := http.Server{
-		Addr:    serviceConfig.ServerPort,
+		Addr:    ":" + serviceConfig.ServerPort,
 		Handler: mux,
 	}
 

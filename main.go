@@ -23,23 +23,26 @@ import (
 /*
 TODO
 Bugs:
-
-User selector disappears after cookie redirect on page return
-BBC RSS feed (and potentially others) have malformed XML — consider gofeed library for more lenient parsing
+- User selector disappears after cookie redirect on page return.
+- Malformed XML (BBC, etc.): Replace standard xml parser with gofeed for lenient, cross-spec parsing.
 
 Features:
-
 Post card improvements:
- - Feed filtering on posts page (filter posts by specific feed)
- - Bookmarking (requires is_bookmarked column on posts_users)
- - Archiving (requires is_archived column on posts_users)
-Stale post archival — delete posts older than 180 days via background job
-  - Make it so that in the environment file the period is configurable and whether or not deletion is just archival.
+ - Feed filtering on posts page (filter posts by specific feed).
+ - Bookmarking (requires is_bookmarked column on posts_users).
+ - Archiving (requires is_archived column on posts_users).
+ - Rich Previews: Implement og:image/twitter:image extraction via html.Tokenizer.
+ 
+Stale post archival:
+ - Delete posts/files older than 180 days via background job.
+ - Configurable retention period and "hard delete vs. move to archive" toggle in .env.
 
-# Stale user cleanup — soft delete then hard delete after 90 days
+# Stale user cleanup — soft delete then hard delete after 90 days.
 
 Infrastructure:
-OIDC authentication via Authelia — replaces current manual user seeding
+- OIDC authentication via Authelia: Replaces manual user seeding.
+- NAS Storage Interface: Implement a file handler to store full article content as .md/txt on NAS.
+- pgvector Integration: Add vector extension to Postgres for embedding storage.
 */
 
 /*
@@ -47,28 +50,31 @@ NOTE
 **Future Enhancements**
 *Observability & Health*
 Prometheus Metrics:
-Implement a /metrics endpoint using prometheus/client_golang to track:
-- Feed fetch success/failure rates.
-- Database query latency.
-- Number of active users and total post counts.
+- Implement /metrics using prometheus/client_golang.
+- Track: Fetch success/failure, DB latency, active user counts, and LLM processing queue depth.
 
 Blackbox Monitoring:
-Configure a /health endpoint for uptime checks and latency monitoring via Prometheus Blackbox Exporter.
+- /health endpoint for uptime and latency checks via Prometheus Blackbox Exporter.
 
 **Semantic Intelligence (The "Daily Brief")**
+*Content Extraction:*
+- Use go-readability (go-shiori/go-readability) to strip "noise" (ads/nav) before storage and vectorization.
 *LLM Integration:*
-- Develop a routine to pass daily retrieved posts to a local LLM (via a Claude/Ollama harness).
+- Background worker to pass cleaned text to local LLM (Ollama/Qwen wrapper).
 *Semantic Summarization:*
-- Generate a single, readable "Daily Briefing" markdown file that summarizes high-priority news across all feeds.
-*Smart Categorization:*
-- Use pgvector to semantically cluster similar posts, allowing for "More like this" features without manual tagging.
+- Generate a "Daily Briefing" markdown file summarizing high-priority news.
+*Smart Categorization & RAG:*
+- Use pgvector for semantic clustering ("More like this").
+- Implement RAG (Retrieval-Augmented Generation) to allow natural language querying of the NAS-stored archive.
 
-*User Experience & Scalability*
+**User Experience & Scalability**
 Live-ish Refresh:
-- Implement a "Soft Refresh" using HTMX every polling to check for new feed items without a manual page reload.
-Hybrid Storage:
-- Maybe move feed content to a filesystem-based cache while keeping metadata in Postgres to keep the DB size lean (throw the data into the NAS?).
+- Implement HTMX "Soft Refresh" to poll for new items without full page reloads.
+Hybrid Storage Strategy:
+- Keep DB lean: Store only metadata and embeddings in Postgres.
+- Store high-volume raw text on NAS/Filesystem; reference via path in DB.
 */
+
 func main() {
 	godotenv.Load()
 

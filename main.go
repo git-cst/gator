@@ -58,7 +58,7 @@ Blackbox Monitoring:
 
 **Semantic Intelligence (The "Daily Brief")**
 *Content Extraction:*
-- Use go-readability (go-shiori/go-readability) to strip "noise" (ads/nav) before storage and vectorization.
+- Use go-readability (readeck/go-readability) to strip "noise" (ads/nav) before storage and vectorization.
 *LLM Integration:*
 - Background worker to pass cleaned text to local LLM (Ollama/Qwen wrapper).
 *Semantic Summarization:*

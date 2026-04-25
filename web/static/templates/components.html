@@ -19,7 +19,7 @@
 <article id="feed-{{ .ID }}" class="feed-item">
 	<span class="card-header">
 		<span class="card-meta">
-			<a href="{{ .URL }}">{{ .Title }}</a>
+			<a class="feed-link" href="{{ .URL }}">{{ .Title }}</a>
 		</span>
 		<input type="checkbox" class="toggle" id="toggle-{{ .ID }}"
 			hx-post="{{ if .Subscribed }}/feeds/{{ .ID }}/unsubscribe{{ else }}/feeds/{{ .ID }}/subscribe{{ end }}"

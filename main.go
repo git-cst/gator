@@ -23,8 +23,13 @@ import (
 /*
 TODO
 Bugs:
+<<<<<<< HEAD
 - User selector disappears after cookie redirect on page return.
 - Malformed XML (BBC, etc.): Replace standard xml parser with gofeed for lenient, cross-spec parsing.
+=======
+
+BBC RSS feed (and potentially others) have malformed XML — consider gofeed library for more lenient parsing
+>>>>>>> 6337831 (Add favicon)
 
 Features:
 Post card improvements:

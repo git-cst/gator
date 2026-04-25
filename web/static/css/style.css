@@ -152,6 +152,20 @@ nav a:hover {
   border-color: var(--border-hover);
 }
 
+.feed-item a {
+  color: var(--text-primary);
+  font-size: 1rem;
+}
+
+.feed-item a:visited {
+  color: var(--text-primary);
+}
+
+.feed-item a {
+  color: var(--text-primary);
+  font-size: 1rem;
+}
+
 .post-source {
   color: var(--text-muted);
   font-size: 0.8rem;
@@ -251,7 +265,7 @@ input[type="checkbox"].toggle + label::before {
   background-color: var(--border);
   border-radius: 1em;
   margin-right: 0.25em;
-  transition: background-color 200ms ease-in-out;
+  transition: background-color 800ms ease-in-out;
 }
 
 input[type="checkbox"].toggle + label::after {
@@ -263,8 +277,8 @@ input[type="checkbox"].toggle + label::after {
   background-color: #ffffff;
   border-radius: 50%;
   transition:
-    background-color 200ms ease-in-out,
-    transform 200ms ease-in-out;
+    background-color 800ms ease-in-out,
+    transform 800ms ease-in-out;
 }
 
 input[type="checkbox"].toggle:checked + label::before {
@@ -357,7 +371,11 @@ dialog {
   border: 1px solid var(--border);
   border-radius: 2rem;
   padding: var(--spacing-lg);
-  margin: auto;
+  position: fixed;
+  top: 10%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
   min-width: min(400px, 90vw);
 }
 

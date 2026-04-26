@@ -10,5 +10,5 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o gator .
 FROM alpine:latest
 WORKDIR /app
 COPY --from=builder /app/gator .
-EXPOSE 8888
+EXPOSE 8000
 CMD ["./gator"]

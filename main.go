@@ -23,13 +23,8 @@ import (
 /*
 TODO
 Bugs:
-<<<<<<< HEAD
 - User selector disappears after cookie redirect on page return.
 - Malformed XML (BBC, etc.): Replace standard xml parser with gofeed for lenient, cross-spec parsing.
-=======
-
-BBC RSS feed (and potentially others) have malformed XML — consider gofeed library for more lenient parsing
->>>>>>> 6337831 (Add favicon)
 
 Features:
 Post card improvements:
@@ -37,7 +32,7 @@ Post card improvements:
  - Bookmarking (requires is_bookmarked column on posts_users).
  - Archiving (requires is_archived column on posts_users).
  - Rich Previews: Implement og:image/twitter:image extraction via html.Tokenizer.
- 
+
 Stale post archival:
  - Delete posts/files older than 180 days via background job.
  - Configurable retention period and "hard delete vs. move to archive" toggle in .env.

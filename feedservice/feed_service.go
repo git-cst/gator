@@ -57,8 +57,13 @@ func (s *FeedService) StorePosts(ctx context.Context, feed RSSFeed) error {
 			log.Printf("Unknown time format: %v, err: %v", post.PubDate, err)
 		}
 
+		UUID, err := uuid.NewV7()
+		if err != nil {
+			log.Panicf("Could not create new UUID")
+		}
+
 		_, err = s.queries.CreatePost(ctx, database.CreatePostParams{
-			ID:          uuid.New(),
+			ID:          UUID,
 			FeedID:      storedFeed.ID,
 			Title:       post.Title,
 			Description: postDescription,

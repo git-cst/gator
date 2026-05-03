@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -55,7 +56,7 @@ func getTemplateName(r *http.Request, fullPage string, partialPage string) strin
 	return fullPage
 }
 
-func (s *Server) resolveCursor(r *http.Request) uuid.NullUUID {
+func (s *Server) resolveFeedCursor(r *http.Request) feedCursor {
 	var cursorStr string
 	if r.Method == http.MethodPost || r.Method == http.MethodDelete {
 		cursorStr = r.FormValue("cursor")
@@ -63,11 +64,26 @@ func (s *Server) resolveCursor(r *http.Request) uuid.NullUUID {
 		cursorStr = r.URL.Query().Get("cursor")
 	}
 
-	cursorUUID, err := uuid.Parse(cursorStr)
+	cursor, err := decodeFeedCursor(cursorStr)
 	if err != nil {
-		return uuid.NullUUID{Valid: false}
+		return feedCursor{}
 	}
-	return uuid.NullUUID{Valid: true, UUID: cursorUUID}
+	return cursor
+}
+
+func (s *Server) resolvePostCursor(r *http.Request) postCursor {
+	var cursorStr string
+	if r.Method == http.MethodPost || r.Method == http.MethodDelete {
+		cursorStr = r.FormValue("cursor")
+	} else {
+		cursorStr = r.URL.Query().Get("cursor")
+	}
+
+	cursor, err := decodePostCursor(cursorStr)
+	if err != nil {
+		return postCursor{}
+	}
+	return cursor
 }
 
 func (s *Server) getUserContext(r *http.Request, w http.ResponseWriter) (userData userContext, fromCookie bool, err error) {
@@ -202,4 +218,64 @@ func (s *Server) getCurrUserFeeds(ctx context.Context, currUser uuid.UUID) ([]*f
 	}
 
 	return feeds, hasNextPage, nil
+}
+
+func (pc postCursor) encode() (string, error) {
+	encodeBytes, err := json.Marshal(pc)
+	if err != nil {
+		return "", err
+	}
+
+	return base64.RawStdEncoding.EncodeToString(encodeBytes), nil
+}
+
+func (fc feedCursor) encode() (string, error) {
+	encodeBytes, err := json.Marshal(fc)
+	if err != nil {
+		return "", err
+	}
+
+	return base64.RawStdEncoding.EncodeToString(encodeBytes), nil
+}
+
+func decodeFeedCursor(s string) (feedCursor, error) {
+	if s == "" {
+		return feedCursor{Valid: true}, nil
+	}
+
+	decodedBytes, err := base64.RawStdEncoding.DecodeString(s)
+	if err != nil {
+		return feedCursor{Valid: false}, err
+	}
+
+	var cursor feedCursor
+	err = json.Unmarshal(decodedBytes, &cursor)
+	if err != nil {
+		return feedCursor{Valid: false}, err
+	}
+
+	return cursor, nil
+}
+
+func decodePostCursor(s string) (postCursor, error) {
+	if s == "" {
+		return postCursor{Valid: true}, nil
+	}
+
+	decodedBytes, err := base64.RawStdEncoding.DecodeString(s)
+	if err != nil {
+		return postCursor{Valid: false}, err
+	}
+
+	var cursor postCursor
+	err = json.Unmarshal(decodedBytes, &cursor)
+	if err != nil {
+		return postCursor{Valid: false}, err
+	}
+
+	if !cursor.ID.Valid || !cursor.PublishedAt.Valid {
+		return postCursor{Valid: false}, fmt.Errorf("cannot have a state where both IDs are not valid (ID: %v, PublishedAt: %v", cursor.ID, cursor.PublishedAt)
+	}
+
+	return cursor, nil
 }

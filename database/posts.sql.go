@@ -134,16 +134,22 @@ ON p.id = pu.post_id AND pu.user_id = $1
 LEFT JOIN feeds f
 ON fu.feed_id = f.id
 
-WHERE fu.user_id = $1
-AND p.id < COALESCE($2, CAST('ffffffff-ffff-ffff-ffff-ffffffffffff' AS UUID))
-
-ORDER BY p.id DESC
+WHERE fu.user_id = $2
+AND (
+    (published_at < COALESCE($3, '9999-12-31'::TIMESTAMP))
+    OR (
+        published_at = COALESCE($3, '9999-12-31'::TIMESTAMP)
+        AND p.id < COALESCE($4, CAST('ffffffff-ffff-ffff-ffff-ffffffffffff' AS UUID))
+    )
+)
+ORDER BY published_at DESC, p.id DESC
 LIMIT 51
 `
 
 type GetPostsForUserParams struct {
-	UserID uuid.UUID
-	Cursor uuid.NullUUID
+	UserID     uuid.UUID
+	CursorDate sql.NullTime
+	CursorID   uuid.NullUUID
 }
 
 type GetPostsForUserRow struct {
@@ -158,7 +164,12 @@ type GetPostsForUserRow struct {
 }
 
 func (q *Queries) GetPostsForUser(ctx context.Context, arg GetPostsForUserParams) ([]GetPostsForUserRow, error) {
-	rows, err := q.db.QueryContext(ctx, getPostsForUser, arg.UserID, arg.Cursor)
+	rows, err := q.db.QueryContext(ctx, getPostsForUser,
+		arg.UserID,
+		arg.UserID,
+		arg.CursorDate,
+		arg.CursorID,
+	)
 	if err != nil {
 		return nil, err
 	}

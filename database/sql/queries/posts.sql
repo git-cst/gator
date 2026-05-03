@@ -26,10 +26,15 @@ ON p.id = pu.post_id AND pu.user_id = $1
 LEFT JOIN feeds f
 ON fu.feed_id = f.id
 
-WHERE fu.user_id = $1
-AND p.id < COALESCE(sqlc.narg(cursor), CAST('ffffffff-ffff-ffff-ffff-ffffffffffff' AS UUID))
-
-ORDER BY p.id DESC
+WHERE fu.user_id = @user_id
+AND (
+    (published_at < COALESCE(sqlc.narg(cursor_date), '9999-12-31'::TIMESTAMP))
+    OR (
+        published_at = COALESCE(sqlc.narg(cursor_date), '9999-12-31'::TIMESTAMP)
+        AND p.id < COALESCE(sqlc.narg(cursor_id), CAST('ffffffff-ffff-ffff-ffff-ffffffffffff' AS UUID))
+    )
+)
+ORDER BY published_at DESC, p.id DESC
 LIMIT 51;
 
 -- name: TogglePostReadStatus :one

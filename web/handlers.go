@@ -55,8 +55,19 @@ type userContext struct {
 	CurrUser *userItem
 }
 
+type feedCursor struct {
+	ID    uuid.NullUUID `json:"row_id"`
+	Valid bool
+}
+
+type postCursor struct {
+	PublishedAt sql.NullTime  `json:"published_at"`
+	ID          uuid.NullUUID `json:"row_id"`
+	Valid       bool
+}
+
 type navigationContext struct {
-	Cursor      uuid.UUID
+	Cursor      string
 	HasNextPage bool
 }
 
@@ -127,7 +138,7 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 	var currUserFeeds []*feedItem
 	var errMsg string
 	var partialPage string
-	cursor := s.resolveCursor(r)
+	cursor := s.resolveFeedCursor(r)
 	if cursor.Valid {
 		partialPage = "nextFeedContent"
 	} else {
@@ -172,19 +183,34 @@ func (s *Server) handleGetFeeds(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if cursor.Valid {
-		templateName = getTemplateName(r, "feeds.html", "nextFeedContent")
-	}
-
-	var nextCursor uuid.UUID
+	var nextCursor feedCursor
+	var cursorString string
 	if hasNextPage {
-		nextCursor = currUserFeeds[49].ID
+		nextCursor = feedCursor{
+			ID: uuid.NullUUID{
+				UUID:  currUserFeeds[50].ID,
+				Valid: true,
+			},
+			Valid: true,
+		}
+
+		cursorString, err = nextCursor.encode()
+		if err != nil {
+			cursorString = ""
+			statusCode = http.StatusInternalServerError
+			errMsg = "internal server error"
+			log.Printf("could not encode cursor whilst retrieving feeds")
+
+		}
+	} else {
+		nextCursor = feedCursor{}
+		cursorString = ""
 	}
 
 	s.respondWithHTML(w, templateName, feedPageData{
 		userContext: userCtx,
 		navigationContext: navigationContext{
-			Cursor:      nextCursor,
+			Cursor:      cursorString,
 			HasNextPage: hasNextPage,
 		},
 		Feeds:         currUserFeeds,
@@ -270,9 +296,18 @@ func (s *Server) handleAddFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cursor := s.resolveCursor(r)
+	cursor := s.resolveFeedCursor(r)
+	var cursorString string
+	if cursor.Valid {
+		cursorString, err = cursor.encode()
+		if err != nil {
+			cursorString = ""
+		}
+	} else {
+		cursorString = ""
+	}
 
-	redirectURL := fmt.Sprintf("/feeds?user_id=%s&cursor=%s", feedsUsersRow.UserID.String(), cursor.UUID)
+	redirectURL := fmt.Sprintf("/feeds?user_id=%s&cursor=%s", feedsUsersRow.UserID.String(), cursorString)
 	http.Redirect(w, r, redirectURL, statusCode)
 }
 
@@ -361,8 +396,16 @@ func (s *Server) handleUnsubscribeUserFromFeed(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	cursor := s.resolveCursor(r)
-
+	cursor := s.resolveFeedCursor(r)
+	var cursorString string
+	if cursor.Valid {
+		cursorString, err = cursor.encode()
+		if err != nil {
+			cursorString = ""
+		}
+	} else {
+		cursorString = ""
+	}
 	log.Printf("Successfully unsubscribed user %s from feed: %s (%s)", currUserUUID.UUID.String(), deletedFeed.Title, deletedFeed.Url)
 
 	if r.Header.Get("HX-Request") == "true" {
@@ -376,7 +419,7 @@ func (s *Server) handleUnsubscribeUserFromFeed(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	redirectURL := fmt.Sprintf("/feeds?user_id=%s&cursor=%s", currUserUUID.UUID.String(), cursor.UUID)
+	redirectURL := fmt.Sprintf("/feeds?user_id=%s&cursor=%s", currUserUUID.UUID.String(), cursorString)
 	http.Redirect(w, r, redirectURL, statusCode)
 }
 
@@ -426,14 +469,23 @@ func (s *Server) handleSubscribeUserToFeed(w http.ResponseWriter, r *http.Reques
 
 	log.Printf("Successfully subscribed user (%s) to %s (%s)", currUserUUID.UUID.String(), subscribedFeed.Title, subscribedFeed.URL)
 
-	cursor := s.resolveCursor(r)
+	cursor := s.resolveFeedCursor(r)
+	var cursorString string
+	if cursor.Valid {
+		cursorString, err = cursor.encode()
+		if err != nil {
+			cursorString = ""
+		}
+	} else {
+		cursorString = ""
+	}
 
 	if r.Header.Get("HX-Request") == "true" {
 		s.respondWithHTML(w, "feedItem", subscribedFeed, http.StatusOK)
 		return
 	}
 
-	redirectURL := fmt.Sprintf("/feeds?user_id=%s&cursor=%s", currUserUUID.UUID.String(), cursor.UUID)
+	redirectURL := fmt.Sprintf("/feeds?user_id=%s&cursor=%s", currUserUUID.UUID.String(), cursorString)
 	http.Redirect(w, r, redirectURL, statusCode)
 }
 
@@ -448,7 +500,7 @@ func (s *Server) handleGetPosts(w http.ResponseWriter, r *http.Request) {
 	var hasNextPage bool
 	var partialPage string
 
-	cursor := s.resolveCursor(r)
+	cursor := s.resolvePostCursor(r)
 	if cursor.Valid {
 		partialPage = "nextPostContent"
 	} else {
@@ -483,21 +535,51 @@ func (s *Server) handleGetPosts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	params := database.GetPostsForUserParams{
-		UserID: userCtx.CurrUser.ID,
-		Cursor: cursor,
+		UserID:     userCtx.CurrUser.ID,
+		CursorID:   cursor.ID,
+		CursorDate: cursor.PublishedAt,
 	}
 	userPostRows, err := s.queries.GetPostsForUser(ctx, params)
+	var paginatedUserPosts []database.GetPostsForUserRow
+	var nextCursor postCursor
+	var cursorString string
 	if errors.Is(err, sql.ErrNoRows) {
 		statusCode = http.StatusNoContent
+		nextCursor = postCursor{}
 	} else if err != nil {
 		log.Printf("GetPostsForUser error: %v", err)
 		statusCode = http.StatusInternalServerError
 		errMsg = "internal server error"
+		nextCursor = postCursor{}
 	} else {
-		userPostRows, hasNextPage = paginate(userPostRows)
+		paginatedUserPosts, hasNextPage = paginate(userPostRows)
 		statusCode = http.StatusOK
-		for _, row := range userPostRows {
+		for _, row := range paginatedUserPosts {
 			currUserPosts = append(currUserPosts, toPostItem(row))
+		}
+
+		if hasNextPage {
+			nextCursor = postCursor{
+				ID: uuid.NullUUID{
+					UUID:  userPostRows[50].ID,
+					Valid: true,
+				},
+				PublishedAt: sql.NullTime{
+					Time:  userPostRows[50].PublishedAt,
+					Valid: true,
+				},
+				Valid: true,
+			}
+
+			cursorString, err = nextCursor.encode()
+			if err != nil {
+				statusCode = http.StatusInternalServerError
+				errMsg = "internal server error"
+				log.Printf("could not encode cursor whilst retrieving posts")
+			}
+		} else {
+			nextCursor = postCursor{}
+			cursorString = ""
 		}
 	}
 
@@ -512,15 +594,10 @@ func (s *Server) handleGetPosts(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	var nextCursor uuid.UUID
-	if hasNextPage {
-		nextCursor = currUserPosts[49].ID
-	}
-
 	s.respondWithHTML(w, templateName, postPageData{
 		userContext: userCtx,
 		navigationContext: navigationContext{
-			Cursor:      nextCursor,
+			Cursor:      cursorString,
 			HasNextPage: hasNextPage,
 		},
 		Posts:         currUserPosts,

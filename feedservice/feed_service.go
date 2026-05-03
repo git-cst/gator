@@ -3,13 +3,9 @@ package feedservice
 import (
 	"context"
 	"database/sql"
-	"encoding/xml"
 	"errors"
 	"fmt"
-	"html"
-	"io"
 	"log"
-	"net/http"
 	"sync"
 	"time"
 
@@ -18,18 +14,30 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
+	"github.com/mmcdole/gofeed"
 )
 
 type FeedService struct {
 	queries        *database.Queries
-	httpClient     *http.Client
+	parser         *gofeed.Parser
 	maxConcurrency uint8
 }
 
+type parsedFeedResult struct {
+	url  string
+	feed *gofeed.Feed
+}
+
+const pgUniqueViolation = "23505"
+
 func NewService(queries *database.Queries, httpConfig *config.HTTPConfig, serviceConfig *config.ServiceConfig) *FeedService {
+	parser := gofeed.NewParser()
+	parser.Client = httpConfig.HTTPClient
+	parser.UserAgent = "gator0.1/git-cst"
+
 	return &FeedService{
 		queries:        queries,
-		httpClient:     httpConfig.HTTPClient,
+		parser:         parser,
 		maxConcurrency: serviceConfig.MaxConcurrency,
 	}
 }
@@ -38,28 +46,41 @@ func (s *FeedService) GetDistinctFeeds(ctx context.Context) ([]database.GetDisti
 	return s.queries.GetDistinctFeeds(ctx)
 }
 
-func (s *FeedService) StorePosts(ctx context.Context, feed RSSFeed) error {
-	storedFeedRow, err := s.queries.GetFeedByUrl(ctx, feed.URL)
+func (s *FeedService) StorePosts(ctx context.Context, feed *gofeed.Feed, feedURL string) error {
+	lookupURL := feed.FeedLink
+	if lookupURL == "" {
+		lookupURL = feedURL
+	}
+
+	storedFeedRow, err := s.queries.GetFeedByUrl(ctx, lookupURL)
 	if errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("no feed with url %q exists: %w", feed.Channel.Link, err)
+		return fmt.Errorf("no feed with url %q exists: %w", lookupURL, err)
 	} else if err != nil {
 		return err
 	}
 
-	for _, post := range feed.Channel.Items {
-		postDescription := sql.NullString{
-			String: post.Description,
-			Valid:  post.Description != "",
+	for _, post := range feed.Items {
+		var descriptionVal string
+		if post.Content != "" {
+			descriptionVal = post.Content
+		} else {
+			descriptionVal = post.Description
 		}
 
-		publishedAt, err := parseTimeString(post.PubDate)
-		if err != nil {
-			log.Printf("Unknown time format: %v, err: %v", post.PubDate, err)
+		postDescription := sql.NullString{
+			String: descriptionVal,
+			Valid:  descriptionVal != "",
 		}
 
 		UUID, err := uuid.NewV7()
 		if err != nil {
-			log.Panicf("Could not create new UUID")
+			log.Printf("Could not create new UUID for post %v. Error: %v", post, err)
+			continue
+		}
+
+		var publishedAt time.Time
+		if post.PublishedParsed != nil {
+			publishedAt = *post.PublishedParsed
 		}
 
 		_, err = s.queries.CreatePost(ctx, database.CreatePostParams{
@@ -72,7 +93,7 @@ func (s *FeedService) StorePosts(ctx context.Context, feed RSSFeed) error {
 			CreatedAt:   time.Now(),
 			UpdatedAt:   time.Now(),
 		})
-		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == "23505" {
+		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == pgUniqueViolation {
 			// OK that there is a duplicate post, silently fail
 		} else if err != nil {
 			log.Printf("feed post not able to be inserted: %q at link: %v\nReason: %v", post.Title, post.Link, err)
@@ -80,31 +101,6 @@ func (s *FeedService) StorePosts(ctx context.Context, feed RSSFeed) error {
 	}
 
 	return nil
-}
-
-func parseTimeString(timeString string) (time.Time, error) {
-	formats := []string{
-		"Mon, 02 Jan 2006 15:04:05 -0700", // RFC1123 with timezone
-		"Mon, 02 Jan 2006 15:04:05 MST",   // RFC1123 with timezone abbreviation
-		"2006-01-02T15:04:05-07:00",       // ISO8601/RFC3339
-		"2006-01-02T15:04:05Z",            // ISO8601/RFC3339 UTC
-		"2006-01-02 15:04:05 -0700",       // Another common format
-		"02 Jan 2006 15:04:05 -0700",      // Another variation
-	}
-
-	var firstErr error
-	for _, format := range formats {
-		publishedAt, err := time.Parse(format, timeString)
-		if err == nil {
-			return publishedAt, nil
-		}
-		if firstErr == nil {
-			firstErr = err
-		}
-	}
-
-	// If we got here, none of the formats worked
-	return time.Time{}, fmt.Errorf("could not parse time '%s': %v", timeString, firstErr)
 }
 
 func Start(ctx context.Context, service *FeedService) {
@@ -133,8 +129,8 @@ func runSync(ctx context.Context, service *FeedService) {
 		return
 	}
 
-	sem := make(chan struct{}, service.maxConcurrency) // buffer the channel blocking if max concurrency reached
-	results := make(chan *RSSFeed, len(feedRows))      // buffer the results channel so we can always send parsed results into the channel without blocking
+	sem := make(chan struct{}, service.maxConcurrency)     // buffer the channel blocking if max concurrency reached
+	results := make(chan *parsedFeedResult, len(feedRows)) // buffer the results channel so we can always send parsed results into the channel without blocking
 
 	var wg sync.WaitGroup
 
@@ -146,12 +142,18 @@ func runSync(ctx context.Context, service *FeedService) {
 			sem <- struct{}{}
 			defer func() { <-sem }() // this releases on exit for any reason so we don't have a semaphore slot leak (e.g. the semaphore slot is always taken up)
 
-			parsed, err := fetchAndParse(ctx, service.httpClient, url)
+			parsedFeed, err := service.parser.ParseURLWithContext(url, ctx)
 			if err != nil {
 				log.Printf("failed to fetch %s: %v", url, err)
 				return
 			}
-			results <- parsed
+
+			parsedFeedResult := parsedFeedResult{
+				feed: parsedFeed,
+				url:  url,
+			}
+
+			results <- &parsedFeedResult
 		}(row.Feed.Url)
 	}
 
@@ -161,43 +163,8 @@ func runSync(ctx context.Context, service *FeedService) {
 	}()
 
 	for parsed := range results {
-		if err := service.StorePosts(ctx, *parsed); err != nil {
+		if err := service.StorePosts(ctx, parsed.feed, parsed.url); err != nil {
 			log.Printf("failed to store posts: %v", err)
 		}
 	}
-}
-
-func fetchAndParse(ctx context.Context, httpClient *http.Client, fetchURL string) (*RSSFeed, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fetchURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("creating request for %s: %w", fetchURL, err)
-	}
-
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("fetching %s: %w", fetchURL, err)
-	}
-	defer resp.Body.Close()
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("reading response for %s: %w", fetchURL, err)
-	}
-
-	var feed RSSFeed
-	if err := xml.Unmarshal(data, &feed); err != nil {
-		return nil, fmt.Errorf("decoding feed %s: %w", fetchURL, err)
-	}
-
-	feed.Channel.Title = html.UnescapeString(feed.Channel.Title)
-	feed.Channel.Description = html.UnescapeString(feed.Channel.Description)
-
-	for i := range feed.Channel.Items {
-		feed.Channel.Items[i].Title = html.UnescapeString(feed.Channel.Items[i].Title)
-		feed.Channel.Items[i].Description = html.UnescapeString(feed.Channel.Items[i].Description)
-	}
-
-	feed.URL = fetchURL
-
-	return &feed, nil
 }

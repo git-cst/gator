@@ -161,21 +161,13 @@ func (q *Queries) DeleteFeedForUser(ctx context.Context, arg DeleteFeedForUserPa
 
 const fetchFeeds = `-- name: FetchFeeds :many
 SELECT 
-	id,
-	title,
-	description,
-	url,
-	last_fetched_at
+	feeds.id, feeds.title, feeds.description, feeds.url, feeds.last_fetched_at, feeds.created_at, feeds.updated_at
 FROM feeds
 ORDER BY last_fetched_at DESC
 `
 
 type FetchFeedsRow struct {
-	ID            uuid.UUID
-	Title         string
-	Description   sql.NullString
-	Url           string
-	LastFetchedAt sql.NullTime
+	Feed Feed
 }
 
 func (q *Queries) FetchFeeds(ctx context.Context) ([]FetchFeedsRow, error) {
@@ -188,11 +180,13 @@ func (q *Queries) FetchFeeds(ctx context.Context) ([]FetchFeedsRow, error) {
 	for rows.Next() {
 		var i FetchFeedsRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.Title,
-			&i.Description,
-			&i.Url,
-			&i.LastFetchedAt,
+			&i.Feed.ID,
+			&i.Feed.Title,
+			&i.Feed.Description,
+			&i.Feed.Url,
+			&i.Feed.LastFetchedAt,
+			&i.Feed.CreatedAt,
+			&i.Feed.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -209,21 +203,13 @@ func (q *Queries) FetchFeeds(ctx context.Context) ([]FetchFeedsRow, error) {
 
 const getDistinctFeeds = `-- name: GetDistinctFeeds :many
 SELECT DISTINCT
-	id,
-	title,
-	description,
-	url,
-	last_fetched_at
+	feeds.id, feeds.title, feeds.description, feeds.url, feeds.last_fetched_at, feeds.created_at, feeds.updated_at
 FROM feeds
 ORDER BY title DESC
 `
 
 type GetDistinctFeedsRow struct {
-	ID            uuid.UUID
-	Title         string
-	Description   sql.NullString
-	Url           string
-	LastFetchedAt sql.NullTime
+	Feed Feed
 }
 
 func (q *Queries) GetDistinctFeeds(ctx context.Context) ([]GetDistinctFeedsRow, error) {
@@ -236,11 +222,13 @@ func (q *Queries) GetDistinctFeeds(ctx context.Context) ([]GetDistinctFeedsRow, 
 	for rows.Next() {
 		var i GetDistinctFeedsRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.Title,
-			&i.Description,
-			&i.Url,
-			&i.LastFetchedAt,
+			&i.Feed.ID,
+			&i.Feed.Title,
+			&i.Feed.Description,
+			&i.Feed.Url,
+			&i.Feed.LastFetchedAt,
+			&i.Feed.CreatedAt,
+			&i.Feed.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -257,25 +245,19 @@ func (q *Queries) GetDistinctFeeds(ctx context.Context) ([]GetDistinctFeedsRow, 
 
 const getDistinctFeedsForUser = `-- name: GetDistinctFeedsForUser :many
 SELECT DISTINCT
-	f.id,
-	f.title,
-	f.description,
-	f.url,
+	feeds.id, feeds.title, feeds.description, feeds.url, feeds.last_fetched_at, feeds.created_at, feeds.updated_at,
 	fu.user_id
-FROM feeds f
+FROM feeds
 LEFT JOIN feeds_users fu
-ON fu.feed_id = f.id AND fu.user_id = $1
+ON fu.feed_id = feeds.id AND fu.user_id = $1
 
 WHERE fu.user_id = $1
-ORDER BY f.title ASC
+ORDER BY feeds.title ASC
 `
 
 type GetDistinctFeedsForUserRow struct {
-	ID          uuid.UUID
-	Title       string
-	Description sql.NullString
-	Url         string
-	UserID      uuid.NullUUID
+	Feed   Feed
+	UserID uuid.NullUUID
 }
 
 func (q *Queries) GetDistinctFeedsForUser(ctx context.Context, userID uuid.UUID) ([]GetDistinctFeedsForUserRow, error) {
@@ -288,10 +270,13 @@ func (q *Queries) GetDistinctFeedsForUser(ctx context.Context, userID uuid.UUID)
 	for rows.Next() {
 		var i GetDistinctFeedsForUserRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.Title,
-			&i.Description,
-			&i.Url,
+			&i.Feed.ID,
+			&i.Feed.Title,
+			&i.Feed.Description,
+			&i.Feed.Url,
+			&i.Feed.LastFetchedAt,
+			&i.Feed.CreatedAt,
+			&i.Feed.UpdatedAt,
 			&i.UserID,
 		); err != nil {
 			return nil, err
@@ -309,76 +294,61 @@ func (q *Queries) GetDistinctFeedsForUser(ctx context.Context, userID uuid.UUID)
 
 const getFeedByID = `-- name: GetFeedByID :one
 SELECT
-	id,
-	title,
-	description,
-	url,
-	last_fetched_at
+	feeds.id, feeds.title, feeds.description, feeds.url, feeds.last_fetched_at, feeds.created_at, feeds.updated_at
 FROM feeds
 WHERE id = $1
 LIMIT 1
 `
 
 type GetFeedByIDRow struct {
-	ID            uuid.UUID
-	Title         string
-	Description   sql.NullString
-	Url           string
-	LastFetchedAt sql.NullTime
+	Feed Feed
 }
 
 func (q *Queries) GetFeedByID(ctx context.Context, id uuid.UUID) (GetFeedByIDRow, error) {
 	row := q.db.QueryRowContext(ctx, getFeedByID, id)
 	var i GetFeedByIDRow
 	err := row.Scan(
-		&i.ID,
-		&i.Title,
-		&i.Description,
-		&i.Url,
-		&i.LastFetchedAt,
+		&i.Feed.ID,
+		&i.Feed.Title,
+		&i.Feed.Description,
+		&i.Feed.Url,
+		&i.Feed.LastFetchedAt,
+		&i.Feed.CreatedAt,
+		&i.Feed.UpdatedAt,
 	)
 	return i, err
 }
 
 const getFeedByUrl = `-- name: GetFeedByUrl :one
 SELECT
-	id,
-	title,
-	description,
-	url,
-	last_fetched_at
+	feeds.id, feeds.title, feeds.description, feeds.url, feeds.last_fetched_at, feeds.created_at, feeds.updated_at
 FROM feeds
 WHERE url = $1
 LIMIT 1
 `
 
 type GetFeedByUrlRow struct {
-	ID            uuid.UUID
-	Title         string
-	Description   sql.NullString
-	Url           string
-	LastFetchedAt sql.NullTime
+	Feed Feed
 }
 
 func (q *Queries) GetFeedByUrl(ctx context.Context, url string) (GetFeedByUrlRow, error) {
 	row := q.db.QueryRowContext(ctx, getFeedByUrl, url)
 	var i GetFeedByUrlRow
 	err := row.Scan(
-		&i.ID,
-		&i.Title,
-		&i.Description,
-		&i.Url,
-		&i.LastFetchedAt,
+		&i.Feed.ID,
+		&i.Feed.Title,
+		&i.Feed.Description,
+		&i.Feed.Url,
+		&i.Feed.LastFetchedAt,
+		&i.Feed.CreatedAt,
+		&i.Feed.UpdatedAt,
 	)
 	return i, err
 }
 
 const getUserFeeds = `-- name: GetUserFeeds :many
 SELECT
-	f.id,
-	f.title,
-	f.description,
-	f.url
+	
 FROM feeds_users fu
 
 LEFT JOIN feeds f
@@ -398,10 +368,7 @@ type GetUserFeedsParams struct {
 }
 
 type GetUserFeedsRow struct {
-	ID          uuid.NullUUID
-	Title       sql.NullString
-	Description sql.NullString
-	Url         sql.NullString
+	Feed Feed
 }
 
 func (q *Queries) GetUserFeeds(ctx context.Context, arg GetUserFeedsParams) ([]GetUserFeedsRow, error) {
@@ -414,10 +381,13 @@ func (q *Queries) GetUserFeeds(ctx context.Context, arg GetUserFeedsParams) ([]G
 	for rows.Next() {
 		var i GetUserFeedsRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.Title,
-			&i.Description,
-			&i.Url,
+			&i.Feed.ID,
+			&i.Feed.Title,
+			&i.Feed.Description,
+			&i.Feed.Url,
+			&i.Feed.LastFetchedAt,
+			&i.Feed.CreatedAt,
+			&i.Feed.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}

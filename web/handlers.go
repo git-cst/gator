@@ -263,7 +263,7 @@ func (s *Server) handleAddFeed(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		feedID = feedRow.ID
+		feedID = feedRow.Feed.ID
 	} else if err != nil {
 		statusCode = http.StatusInternalServerError
 		errMsg := fmt.Sprintf("Failed to add feed %s (%s) due to unexpected error", feedTitle, feedURL)
@@ -326,7 +326,7 @@ func (s *Server) handlerDeleteFeed(w http.ResponseWriter, r *http.Request) {
 	feedTitle := r.FormValue("feed_title")
 	feedURL := r.FormValue("feed_url")
 	currUser := r.FormValue("user_id")
-	feedID, err := s.queries.GetFeedByUrl(ctx, feedURL)
+	feedRow, err := s.queries.GetFeedByUrl(ctx, feedURL)
 	if errors.Is(err, sql.ErrNoRows) {
 		statusCode = http.StatusBadRequest
 		errMsg := fmt.Sprintf("Feed: %s (%s) not found.", feedTitle, feedURL)
@@ -340,7 +340,7 @@ func (s *Server) handlerDeleteFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	deletedFeed, err := s.queries.DeleteFeed(ctx, feedID.ID)
+	deletedFeed, err := s.queries.DeleteFeed(ctx, feedRow.Feed.ID)
 	if err != nil {
 		statusCode = http.StatusInternalServerError
 		errMsg := fmt.Sprintf("Unexpected error whilst deleting %s (%s)", feedTitle, feedURL)

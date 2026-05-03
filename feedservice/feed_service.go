@@ -39,7 +39,7 @@ func (s *FeedService) GetDistinctFeeds(ctx context.Context) ([]database.GetDisti
 }
 
 func (s *FeedService) StorePosts(ctx context.Context, feed RSSFeed) error {
-	storedFeed, err := s.queries.GetFeedByUrl(ctx, feed.URL)
+	storedFeedRow, err := s.queries.GetFeedByUrl(ctx, feed.URL)
 	if errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("no feed with url %q exists: %w", feed.Channel.Link, err)
 	} else if err != nil {
@@ -64,7 +64,7 @@ func (s *FeedService) StorePosts(ctx context.Context, feed RSSFeed) error {
 
 		_, err = s.queries.CreatePost(ctx, database.CreatePostParams{
 			ID:          UUID,
-			FeedID:      storedFeed.ID,
+			FeedID:      storedFeedRow.Feed.ID,
 			Title:       post.Title,
 			Description: postDescription,
 			Url:         post.Link,
@@ -124,7 +124,7 @@ func Start(ctx context.Context, service *FeedService) {
 }
 
 func runSync(ctx context.Context, service *FeedService) {
-	feeds, err := service.GetDistinctFeeds(ctx)
+	feedRows, err := service.GetDistinctFeeds(ctx)
 	if errors.Is(err, sql.ErrNoRows) {
 		log.Printf("no feeds retrieved from database: %v", err)
 		return
@@ -134,11 +134,11 @@ func runSync(ctx context.Context, service *FeedService) {
 	}
 
 	sem := make(chan struct{}, service.maxConcurrency) // buffer the channel blocking if max concurrency reached
-	results := make(chan *RSSFeed, len(feeds))         // buffer the results channel so we can always send parsed results into the channel without blocking
+	results := make(chan *RSSFeed, len(feedRows))      // buffer the results channel so we can always send parsed results into the channel without blocking
 
 	var wg sync.WaitGroup
 
-	for _, feed := range feeds {
+	for _, row := range feedRows {
 		wg.Add(1)
 		go func(url string) {
 			defer wg.Done()
@@ -152,7 +152,7 @@ func runSync(ctx context.Context, service *FeedService) {
 				return
 			}
 			results <- parsed
-		}(feed.Url)
+		}(row.Feed.Url)
 	}
 
 	go func() {

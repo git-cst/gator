@@ -12,7 +12,7 @@ func stripHTML(s string) string {
 	return htmlTagRegex.ReplaceAllString(s, "")
 }
 
-func toFeedItem(row database.GetDistinctFeedsForUserRow) *feedItem {
+func toFeedItem(row database.Feed, subscribed bool) *feedItem {
 	var description string
 	if row.Description.Valid {
 		description = row.Description.String
@@ -23,7 +23,7 @@ func toFeedItem(row database.GetDistinctFeedsForUserRow) *feedItem {
 		Title:       row.Title,
 		URL:         row.Url,
 		Description: stripHTML(description),
-		Subscribed:  row.UserID.Valid,
+		Subscribed:  subscribed,
 	}
 }
 

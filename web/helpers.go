@@ -213,7 +213,7 @@ func (s *Server) getCurrUserFeeds(ctx context.Context, currUser uuid.UUID) ([]*f
 	} else {
 		feedRows, hasNextPage = paginate(feedRows)
 		for _, row := range feedRows {
-			feeds = append(feeds, toFeedItem(row))
+			feeds = append(feeds, toFeedItem(row.Feed, row.UserID.Valid))
 		}
 	}
 

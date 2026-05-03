@@ -22,67 +22,45 @@ UPDATE feeds SET last_fetched_at = $1 WHERE id = $2 RETURNING *;
 
 -- name: FetchFeeds :many
 SELECT 
-	id,
-	title,
-	description,
-	url,
-	last_fetched_at
+	sqlc.embed(feeds)
 FROM feeds
 ORDER BY last_fetched_at DESC;
 
 -- name: GetDistinctFeeds :many
 SELECT DISTINCT
-	id,
-	title,
-	description,
-	url,
-	last_fetched_at
+	sqlc.embed(feeds)
 FROM feeds
 ORDER BY title DESC;
 
 -- name: GetDistinctFeedsForUser :many
 SELECT DISTINCT
-	f.id,
-	f.title,
-	f.description,
-	f.url,
+	sqlc.embed(feeds),
 	fu.user_id
-FROM feeds f
+FROM feeds
 LEFT JOIN feeds_users fu
-ON fu.feed_id = f.id AND fu.user_id = $1
+ON fu.feed_id = feeds.id AND fu.user_id = $1
 
 WHERE fu.user_id = $1
-ORDER BY f.title ASC;
+ORDER BY feeds.title ASC;
 
 
 -- name: GetFeedByUrl :one
 SELECT
-	id,
-	title,
-	description,
-	url,
-	last_fetched_at
+	sqlc.embed(feeds)
 FROM feeds
 WHERE url = $1
 LIMIT 1;
 
 -- name: GetFeedByID :one
 SELECT
-	id,
-	title,
-	description,
-	url,
-	last_fetched_at
+	sqlc.embed(feeds)
 FROM feeds
 WHERE id = $1
 LIMIT 1;
 
 -- name: GetUserFeeds :many
 SELECT
-	f.id,
-	f.title,
-	f.description,
-	f.url
+	sqlc.embed(feeds)
 FROM feeds_users fu
 
 LEFT JOIN feeds f

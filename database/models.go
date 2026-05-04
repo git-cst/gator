@@ -41,12 +41,14 @@ type Post struct {
 }
 
 type PostsUser struct {
-	ID        uuid.UUID
-	PostID    uuid.UUID
-	UserID    uuid.UUID
-	IsRead    bool
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID           uuid.UUID
+	PostID       uuid.UUID
+	UserID       uuid.UUID
+	IsRead       bool
+	IsBookmarked bool
+	IsArchived   bool
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 type User struct {

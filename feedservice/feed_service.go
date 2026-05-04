@@ -90,8 +90,7 @@ func (s *FeedService) StorePosts(ctx context.Context, feed *gofeed.Feed, feedURL
 			Description: postDescription,
 			Url:         post.Link,
 			PublishedAt: publishedAt,
-			CreatedAt:   time.Now(),
-			UpdatedAt:   time.Now(),
+			Now:         time.Now(),
 		})
 		if pqErr, ok := err.(*pq.Error); ok && pqErr.Code == pgUniqueViolation {
 			// OK that there is a duplicate post, silently fail

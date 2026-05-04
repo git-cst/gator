@@ -1,6 +1,7 @@
 package web
 
 import (
+	"database/sql"
 	"regexp"
 
 	"gator/database"
@@ -27,31 +28,33 @@ func toFeedItem(row database.Feed, subscribed bool) *feedItem {
 	}
 }
 
-func toPostItem(row database.GetPostsForUserRow) *postItem {
+func toPostItem(row database.Post, feedTitle sql.NullString, feedURL sql.NullString, isRead sql.NullBool, isBookmarked sql.NullBool, isArchived sql.NullBool) *postItem {
 	var description string
 	if row.Description.Valid {
 		description = row.Description.String
 	}
 
-	var feedTitle string
-	if row.Feedtitle.Valid {
-		feedTitle = row.Feedtitle.String
+	var postFeedTitle string
+	if feedTitle.Valid {
+		postFeedTitle = feedTitle.String
 	}
 
-	var feedURL string
-	if row.Feedurl.Valid {
-		feedURL = row.Feedurl.String
+	var postFeedURL string
+	if feedURL.Valid {
+		postFeedURL = feedURL.String
 	}
 
 	return &postItem{
-		ID:          row.ID,
-		Title:       row.Title,
-		SourceTitle: feedTitle,
-		SourceURL:   feedURL,
-		Description: stripHTML(description),
-		URL:         row.Url,
-		IsRead:      row.IsRead.Valid && row.IsRead.Bool,
-		PublishedAt: row.PublishedAt.Format("02-01-2006 15:04"),
+		ID:           row.ID,
+		Title:        row.Title,
+		SourceTitle:  postFeedTitle,
+		SourceURL:    postFeedURL,
+		Description:  stripHTML(description),
+		URL:          row.Url,
+		IsRead:       isRead.Valid && isRead.Bool,
+		IsBookmarked: isBookmarked.Valid && isBookmarked.Bool,
+		IsArchived:   isArchived.Valid && isArchived.Bool,
+		PublishedAt:  row.PublishedAt.Format("02-01-2006 15:04"),
 	}
 }
 

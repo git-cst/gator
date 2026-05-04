@@ -24,7 +24,6 @@ import (
 TODO
 Bugs:
 - User selector disappears after cookie redirect on page return.
-- Malformed XML (BBC, etc.): Replace standard xml parser with gofeed for lenient, cross-spec parsing.
 
 Features:
 Post card improvements:

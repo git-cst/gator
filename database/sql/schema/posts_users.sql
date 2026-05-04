@@ -3,6 +3,8 @@ CREATE TABLE IF NOT EXISTS posts_users (
 	post_id UUID NOT NULL,
 	user_id UUID NOT NULL,
 	is_read BOOLEAN NOT NULL,
+	is_bookmarked BOOLEAN NOT NULL,
+	is_archived BOOLEAN NOT NULL,
 	created_at TIMESTAMP NOT NULL,
 	updated_at TIMESTAMP NOT NULL,
 

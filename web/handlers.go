@@ -35,14 +35,16 @@ type feedItem struct {
 }
 
 type postItem struct {
-	ID          uuid.UUID
-	Title       string
-	Description string
-	URL         string
-	SourceTitle string
-	SourceURL   string
-	IsRead      bool
-	PublishedAt string
+	ID           uuid.UUID
+	Title        string
+	Description  string
+	URL          string
+	SourceTitle  string
+	SourceURL    string
+	IsRead       bool
+	IsBookmarked bool
+	IsArchived   bool
+	PublishedAt  string
 }
 
 type userItem struct {
@@ -555,17 +557,17 @@ func (s *Server) handleGetPosts(w http.ResponseWriter, r *http.Request) {
 		paginatedUserPosts, hasNextPage = paginate(userPostRows)
 		statusCode = http.StatusOK
 		for _, row := range paginatedUserPosts {
-			currUserPosts = append(currUserPosts, toPostItem(row))
+			currUserPosts = append(currUserPosts, toPostItem(row.Post, row.Feedtitle, row.Feedurl, row.IsRead, row.IsBookmarked, row.IsArchived))
 		}
 
 		if hasNextPage {
 			nextCursor = postCursor{
 				ID: uuid.NullUUID{
-					UUID:  userPostRows[50].ID,
+					UUID:  userPostRows[50].Post.ID,
 					Valid: true,
 				},
 				PublishedAt: sql.NullTime{
-					Time:  userPostRows[50].PublishedAt,
+					Time:  userPostRows[50].Post.PublishedAt,
 					Valid: true,
 				},
 				Valid: true,
@@ -647,12 +649,11 @@ func (s *Server) handleTogglePostReadStatus(w http.ResponseWriter, r *http.Reque
 	// We always setup the params as if we are inserting a new row (e.g. reading for first time).
 	// The query handles if there already is a row (e.g. we've already read it) and flips the bool.
 	markReadParams := database.TogglePostReadStatusParams{
-		ID:        rowID,
-		PostID:    postID,
-		UserID:    userID.UUID,
-		IsRead:    true,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID:     rowID,
+		PostID: postID,
+		UserID: userID.UUID,
+		IsRead: true,
+		Now:    time.Now(),
 	}
 
 	_, err = s.queries.TogglePostReadStatus(ctx, markReadParams)
@@ -664,7 +665,7 @@ func (s *Server) handleTogglePostReadStatus(w http.ResponseWriter, r *http.Reque
 
 	getPostParams := database.GetPostByIDParams{
 		UserID: userID.UUID,
-		ID:     postID,
+		PostID: postID,
 	}
 	updatedPost, err := s.queries.GetPostByID(ctx, getPostParams)
 	if err != nil {
@@ -722,12 +723,11 @@ func (s *Server) handleMarkPostRead(w http.ResponseWriter, r *http.Request) {
 
 	}
 	markReadParams := database.MarkPostAsReadParams{
-		ID:        rowID,
-		PostID:    postID,
-		UserID:    userID.UUID,
-		IsRead:    true,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		ID:     rowID,
+		PostID: postID,
+		UserID: userID.UUID,
+		IsRead: true,
+		Now:    time.Now(),
 	}
 
 	_, err = s.queries.MarkPostAsRead(ctx, markReadParams)
@@ -739,7 +739,7 @@ func (s *Server) handleMarkPostRead(w http.ResponseWriter, r *http.Request) {
 
 	getPostParams := database.GetPostByIDParams{
 		UserID: userID.UUID,
-		ID:     postID,
+		PostID: postID,
 	}
 	updatedPost, err := s.queries.GetPostByID(ctx, getPostParams)
 	if err != nil {

@@ -17,14 +17,13 @@ const createPost = `-- name: CreatePost :one
 INSERT INTO posts(
 	id, created_at,	updated_at, title, url, description, published_at, feed_id
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+VALUES ($1, $2, $2, $3, $4, $5, $6, $7)
 RETURNING id, feed_id, title, url, description, published_at, created_at, updated_at
 `
 
 type CreatePostParams struct {
 	ID          uuid.UUID
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	Now         time.Time
 	Title       string
 	Url         string
 	Description sql.NullString
@@ -35,8 +34,7 @@ type CreatePostParams struct {
 func (q *Queries) CreatePost(ctx context.Context, arg CreatePostParams) (Post, error) {
 	row := q.db.QueryRowContext(ctx, createPost,
 		arg.ID,
-		arg.CreatedAt,
-		arg.UpdatedAt,
+		arg.Now,
 		arg.Title,
 		arg.Url,
 		arg.Description,
@@ -57,6 +55,174 @@ func (q *Queries) CreatePost(ctx context.Context, arg CreatePostParams) (Post, e
 	return i, err
 }
 
+const getArchivedPostsForUser = `-- name: GetArchivedPostsForUser :many
+SELECT
+    p.id, p.feed_id, p.title, p.url, p.description, p.published_at, p.created_at, p.updated_at,
+	f.title as FeedTitle,
+	f.url as FeedUrl,
+	pu.is_read,
+	pu.is_bookmarked,
+    pu.is_archived
+FROM posts as p
+
+INNER JOIN feeds_users fu
+ON p.feed_id = fu.feed_id AND fu.user_id = $1
+
+LEFT JOIN posts_users pu
+ON p.id = pu.post_id AND pu.user_id = $1
+
+LEFT JOIN feeds f
+ON fu.feed_id = f.id
+
+WHERE fu.user_id = $1
+AND (
+    (published_at < COALESCE($2, '9999-12-31'::TIMESTAMP))
+    OR (
+        published_at = COALESCE($2, '9999-12-31'::TIMESTAMP)
+        AND p.id < COALESCE($3, CAST('ffffffff-ffff-ffff-ffff-ffffffffffff' AS UUID))
+    )
+)
+AND pu.is_archived = True
+ORDER BY published_at DESC, p.id DESC
+LIMIT 51
+`
+
+type GetArchivedPostsForUserParams struct {
+	UserID     uuid.UUID
+	CursorDate sql.NullTime
+	CursorID   uuid.NullUUID
+}
+
+type GetArchivedPostsForUserRow struct {
+	Post         Post
+	Feedtitle    sql.NullString
+	Feedurl      sql.NullString
+	IsRead       sql.NullBool
+	IsBookmarked sql.NullBool
+	IsArchived   sql.NullBool
+}
+
+func (q *Queries) GetArchivedPostsForUser(ctx context.Context, arg GetArchivedPostsForUserParams) ([]GetArchivedPostsForUserRow, error) {
+	rows, err := q.db.QueryContext(ctx, getArchivedPostsForUser, arg.UserID, arg.CursorDate, arg.CursorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetArchivedPostsForUserRow
+	for rows.Next() {
+		var i GetArchivedPostsForUserRow
+		if err := rows.Scan(
+			&i.Post.ID,
+			&i.Post.FeedID,
+			&i.Post.Title,
+			&i.Post.Url,
+			&i.Post.Description,
+			&i.Post.PublishedAt,
+			&i.Post.CreatedAt,
+			&i.Post.UpdatedAt,
+			&i.Feedtitle,
+			&i.Feedurl,
+			&i.IsRead,
+			&i.IsBookmarked,
+			&i.IsArchived,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getBookmarkedPostsForUser = `-- name: GetBookmarkedPostsForUser :many
+SELECT
+    p.id, p.feed_id, p.title, p.url, p.description, p.published_at, p.created_at, p.updated_at,
+	f.title as FeedTitle,
+	f.url as FeedUrl,
+	pu.is_read,
+	pu.is_bookmarked,
+    pu.is_archived
+FROM posts as p
+
+INNER JOIN feeds_users fu
+ON p.feed_id = fu.feed_id AND fu.user_id = $1
+
+LEFT JOIN posts_users pu
+ON p.id = pu.post_id AND pu.user_id = $1
+
+LEFT JOIN feeds f
+ON fu.feed_id = f.id
+
+WHERE fu.user_id = $1
+AND (
+    (published_at < COALESCE($2, '9999-12-31'::TIMESTAMP))
+    OR (
+        published_at = COALESCE($2, '9999-12-31'::TIMESTAMP)
+        AND p.id < COALESCE($3, CAST('ffffffff-ffff-ffff-ffff-ffffffffffff' AS UUID))
+    )
+)
+AND pu.is_bookmarked = True
+ORDER BY published_at DESC, p.id DESC
+LIMIT 51
+`
+
+type GetBookmarkedPostsForUserParams struct {
+	UserID     uuid.UUID
+	CursorDate sql.NullTime
+	CursorID   uuid.NullUUID
+}
+
+type GetBookmarkedPostsForUserRow struct {
+	Post         Post
+	Feedtitle    sql.NullString
+	Feedurl      sql.NullString
+	IsRead       sql.NullBool
+	IsBookmarked sql.NullBool
+	IsArchived   sql.NullBool
+}
+
+func (q *Queries) GetBookmarkedPostsForUser(ctx context.Context, arg GetBookmarkedPostsForUserParams) ([]GetBookmarkedPostsForUserRow, error) {
+	rows, err := q.db.QueryContext(ctx, getBookmarkedPostsForUser, arg.UserID, arg.CursorDate, arg.CursorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetBookmarkedPostsForUserRow
+	for rows.Next() {
+		var i GetBookmarkedPostsForUserRow
+		if err := rows.Scan(
+			&i.Post.ID,
+			&i.Post.FeedID,
+			&i.Post.Title,
+			&i.Post.Url,
+			&i.Post.Description,
+			&i.Post.PublishedAt,
+			&i.Post.CreatedAt,
+			&i.Post.UpdatedAt,
+			&i.Feedtitle,
+			&i.Feedurl,
+			&i.IsRead,
+			&i.IsBookmarked,
+			&i.IsArchived,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getPostByID = `-- name: GetPostByID :one
 SELECT
 	p.id,
@@ -66,10 +232,12 @@ SELECT
 	f.title as FeedTitle,
 	f.url as FeedURL,
 	pu.is_read,
+    pu.is_bookmarked,
+    pu.is_archived,
 	p.published_at
 FROM posts as p
 
-LEFT JOIN feeds_users fu
+INNER JOIN feeds_users fu
 ON p.feed_id = fu.feed_id AND fu.user_id = $1
 
 LEFT JOIN posts_users pu
@@ -83,22 +251,24 @@ WHERE p.id = $2
 
 type GetPostByIDParams struct {
 	UserID uuid.UUID
-	ID     uuid.UUID
+	PostID uuid.UUID
 }
 
 type GetPostByIDRow struct {
-	ID          uuid.UUID
-	Title       string
-	Url         string
-	Description sql.NullString
-	Feedtitle   sql.NullString
-	Feedurl     sql.NullString
-	IsRead      sql.NullBool
-	PublishedAt time.Time
+	ID           uuid.UUID
+	Title        string
+	Url          string
+	Description  sql.NullString
+	Feedtitle    sql.NullString
+	Feedurl      sql.NullString
+	IsRead       sql.NullBool
+	IsBookmarked sql.NullBool
+	IsArchived   sql.NullBool
+	PublishedAt  time.Time
 }
 
 func (q *Queries) GetPostByID(ctx context.Context, arg GetPostByIDParams) (GetPostByIDRow, error) {
-	row := q.db.QueryRowContext(ctx, getPostByID, arg.UserID, arg.ID)
+	row := q.db.QueryRowContext(ctx, getPostByID, arg.UserID, arg.PostID)
 	var i GetPostByIDRow
 	err := row.Scan(
 		&i.ID,
@@ -108,6 +278,8 @@ func (q *Queries) GetPostByID(ctx context.Context, arg GetPostByIDParams) (GetPo
 		&i.Feedtitle,
 		&i.Feedurl,
 		&i.IsRead,
+		&i.IsBookmarked,
+		&i.IsArchived,
 		&i.PublishedAt,
 	)
 	return i, err
@@ -115,17 +287,15 @@ func (q *Queries) GetPostByID(ctx context.Context, arg GetPostByIDParams) (GetPo
 
 const getPostsForUser = `-- name: GetPostsForUser :many
 SELECT
-	p.id,
-	p.title,
-	p.url,
-	p.description,
+    p.id, p.feed_id, p.title, p.url, p.description, p.published_at, p.created_at, p.updated_at,
 	f.title as FeedTitle,
 	f.url as FeedUrl,
 	pu.is_read,
-	p.published_at
+	pu.is_bookmarked,
+    pu.is_archived
 FROM posts as p
 
-LEFT JOIN feeds_users fu
+INNER JOIN feeds_users fu
 ON p.feed_id = fu.feed_id AND fu.user_id = $1
 
 LEFT JOIN posts_users pu
@@ -134,14 +304,15 @@ ON p.id = pu.post_id AND pu.user_id = $1
 LEFT JOIN feeds f
 ON fu.feed_id = f.id
 
-WHERE fu.user_id = $2
+WHERE fu.user_id = $1
 AND (
-    (published_at < COALESCE($3, '9999-12-31'::TIMESTAMP))
+    (published_at < COALESCE($2, '9999-12-31'::TIMESTAMP))
     OR (
-        published_at = COALESCE($3, '9999-12-31'::TIMESTAMP)
-        AND p.id < COALESCE($4, CAST('ffffffff-ffff-ffff-ffff-ffffffffffff' AS UUID))
+        published_at = COALESCE($2, '9999-12-31'::TIMESTAMP)
+        AND p.id < COALESCE($3, CAST('ffffffff-ffff-ffff-ffff-ffffffffffff' AS UUID))
     )
 )
+AND (pu.is_archived = False OR pu.is_archived IS NULL)
 ORDER BY published_at DESC, p.id DESC
 LIMIT 51
 `
@@ -153,23 +324,16 @@ type GetPostsForUserParams struct {
 }
 
 type GetPostsForUserRow struct {
-	ID          uuid.UUID
-	Title       string
-	Url         string
-	Description sql.NullString
-	Feedtitle   sql.NullString
-	Feedurl     sql.NullString
-	IsRead      sql.NullBool
-	PublishedAt time.Time
+	Post         Post
+	Feedtitle    sql.NullString
+	Feedurl      sql.NullString
+	IsRead       sql.NullBool
+	IsBookmarked sql.NullBool
+	IsArchived   sql.NullBool
 }
 
 func (q *Queries) GetPostsForUser(ctx context.Context, arg GetPostsForUserParams) ([]GetPostsForUserRow, error) {
-	rows, err := q.db.QueryContext(ctx, getPostsForUser,
-		arg.UserID,
-		arg.UserID,
-		arg.CursorDate,
-		arg.CursorID,
-	)
+	rows, err := q.db.QueryContext(ctx, getPostsForUser, arg.UserID, arg.CursorDate, arg.CursorID)
 	if err != nil {
 		return nil, err
 	}
@@ -178,14 +342,19 @@ func (q *Queries) GetPostsForUser(ctx context.Context, arg GetPostsForUserParams
 	for rows.Next() {
 		var i GetPostsForUserRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.Title,
-			&i.Url,
-			&i.Description,
+			&i.Post.ID,
+			&i.Post.FeedID,
+			&i.Post.Title,
+			&i.Post.Url,
+			&i.Post.Description,
+			&i.Post.PublishedAt,
+			&i.Post.CreatedAt,
+			&i.Post.UpdatedAt,
 			&i.Feedtitle,
 			&i.Feedurl,
 			&i.IsRead,
-			&i.PublishedAt,
+			&i.IsBookmarked,
+			&i.IsArchived,
 		); err != nil {
 			return nil, err
 		}
@@ -202,28 +371,29 @@ func (q *Queries) GetPostsForUser(ctx context.Context, arg GetPostsForUserParams
 
 const markPostAsRead = `-- name: MarkPostAsRead :one
 INSERT INTO posts_users(
-	id,
-	post_id,
-	user_id,
-	is_read,
-	created_at,
-	updated_at
+    id,
+    post_id,
+    user_id,
+    is_read,
+    is_bookmarked,
+    is_archived,
+    created_at,
+    updated_at
 )
-VALUES ($1, $2, $3, $4, $5, $6)
+VALUES ($1, $2, $3, $4, false, false, $5, $5)
 
 ON CONFLICT (post_id, user_id) DO UPDATE SET
 	is_read = EXCLUDED.is_read,
 	updated_at = EXCLUDED.updated_at
-RETURNING id, post_id, user_id, is_read, created_at, updated_at
+RETURNING id, post_id, user_id, is_read, is_bookmarked, is_archived, created_at, updated_at
 `
 
 type MarkPostAsReadParams struct {
-	ID        uuid.UUID
-	PostID    uuid.UUID
-	UserID    uuid.UUID
-	IsRead    bool
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID     uuid.UUID
+	PostID uuid.UUID
+	UserID uuid.UUID
+	IsRead bool
+	Now    time.Time
 }
 
 func (q *Queries) MarkPostAsRead(ctx context.Context, arg MarkPostAsReadParams) (PostsUser, error) {
@@ -232,8 +402,7 @@ func (q *Queries) MarkPostAsRead(ctx context.Context, arg MarkPostAsReadParams) 
 		arg.PostID,
 		arg.UserID,
 		arg.IsRead,
-		arg.CreatedAt,
-		arg.UpdatedAt,
+		arg.Now,
 	)
 	var i PostsUser
 	err := row.Scan(
@@ -241,6 +410,106 @@ func (q *Queries) MarkPostAsRead(ctx context.Context, arg MarkPostAsReadParams) 
 		&i.PostID,
 		&i.UserID,
 		&i.IsRead,
+		&i.IsBookmarked,
+		&i.IsArchived,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const toggleArchivedStatus = `-- name: ToggleArchivedStatus :one
+INSERT INTO posts_users(
+    id,
+    post_id,
+    user_id,
+    is_read,
+    is_bookmarked,
+    is_archived,
+    created_at,
+    updated_at
+)
+VALUES ($1, $2, $3, false, false, $4, $5, $5)
+
+ON CONFLICT (post_id, user_id) DO UPDATE SET
+	is_archived = NOT posts_users.is_archived,
+	updated_at = EXCLUDED.updated_at
+RETURNING id, post_id, user_id, is_read, is_bookmarked, is_archived, created_at, updated_at
+`
+
+type ToggleArchivedStatusParams struct {
+	ID         uuid.UUID
+	PostID     uuid.UUID
+	UserID     uuid.UUID
+	IsArchived bool
+	Now        time.Time
+}
+
+func (q *Queries) ToggleArchivedStatus(ctx context.Context, arg ToggleArchivedStatusParams) (PostsUser, error) {
+	row := q.db.QueryRowContext(ctx, toggleArchivedStatus,
+		arg.ID,
+		arg.PostID,
+		arg.UserID,
+		arg.IsArchived,
+		arg.Now,
+	)
+	var i PostsUser
+	err := row.Scan(
+		&i.ID,
+		&i.PostID,
+		&i.UserID,
+		&i.IsRead,
+		&i.IsBookmarked,
+		&i.IsArchived,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const toggleBookmarkStatus = `-- name: ToggleBookmarkStatus :one
+INSERT INTO posts_users(
+    id,
+    post_id,
+    user_id,
+    is_read,
+    is_bookmarked,
+    is_archived,
+    created_at,
+    updated_at
+)
+VALUES ($1, $2, $3, false, $4, false, $5, $5)
+
+ON CONFLICT (post_id, user_id) DO UPDATE SET
+	is_bookmarked = NOT posts_users.is_bookmarked,
+	updated_at = EXCLUDED.updated_at
+RETURNING id, post_id, user_id, is_read, is_bookmarked, is_archived, created_at, updated_at
+`
+
+type ToggleBookmarkStatusParams struct {
+	ID           uuid.UUID
+	PostID       uuid.UUID
+	UserID       uuid.UUID
+	IsBookmarked bool
+	Now          time.Time
+}
+
+func (q *Queries) ToggleBookmarkStatus(ctx context.Context, arg ToggleBookmarkStatusParams) (PostsUser, error) {
+	row := q.db.QueryRowContext(ctx, toggleBookmarkStatus,
+		arg.ID,
+		arg.PostID,
+		arg.UserID,
+		arg.IsBookmarked,
+		arg.Now,
+	)
+	var i PostsUser
+	err := row.Scan(
+		&i.ID,
+		&i.PostID,
+		&i.UserID,
+		&i.IsRead,
+		&i.IsBookmarked,
+		&i.IsArchived,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -249,28 +518,29 @@ func (q *Queries) MarkPostAsRead(ctx context.Context, arg MarkPostAsReadParams) 
 
 const togglePostReadStatus = `-- name: TogglePostReadStatus :one
 INSERT INTO posts_users(
-	id,
-	post_id,
-	user_id,
-	is_read,
-	created_at,
-	updated_at
+    id,
+    post_id,
+    user_id,
+    is_read,
+    is_bookmarked,
+    is_archived,
+    created_at,
+    updated_at
 )
-VALUES ($1, $2, $3, $4, $5, $6)
+VALUES ($1, $2, $3, $4, false, false, $5, $5)
 
 ON CONFLICT (post_id, user_id) DO UPDATE SET
 	is_read = NOT posts_users.is_read,
 	updated_at = EXCLUDED.updated_at
-RETURNING id, post_id, user_id, is_read, created_at, updated_at
+RETURNING id, post_id, user_id, is_read, is_bookmarked, is_archived, created_at, updated_at
 `
 
 type TogglePostReadStatusParams struct {
-	ID        uuid.UUID
-	PostID    uuid.UUID
-	UserID    uuid.UUID
-	IsRead    bool
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID     uuid.UUID
+	PostID uuid.UUID
+	UserID uuid.UUID
+	IsRead bool
+	Now    time.Time
 }
 
 func (q *Queries) TogglePostReadStatus(ctx context.Context, arg TogglePostReadStatusParams) (PostsUser, error) {
@@ -279,8 +549,7 @@ func (q *Queries) TogglePostReadStatus(ctx context.Context, arg TogglePostReadSt
 		arg.PostID,
 		arg.UserID,
 		arg.IsRead,
-		arg.CreatedAt,
-		arg.UpdatedAt,
+		arg.Now,
 	)
 	var i PostsUser
 	err := row.Scan(
@@ -288,6 +557,8 @@ func (q *Queries) TogglePostReadStatus(ctx context.Context, arg TogglePostReadSt
 		&i.PostID,
 		&i.UserID,
 		&i.IsRead,
+		&i.IsBookmarked,
+		&i.IsArchived,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
